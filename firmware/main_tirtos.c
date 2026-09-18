@@ -48,6 +48,7 @@
 #include "rf_packet_queue.h"
 #include "firmware_mode.h"
 #include "firmware_tx.h"
+#include "i2c_slave.h"
 
 extern void *firmware_rx_thread(void *arg0);
 
@@ -77,6 +78,9 @@ int main(void)
     role = firmware_role_from_metadata();
     if (role == FIRMWARE_ROLE_RX) {
         rf_packet_queue_init();
+    }
+    if (i2c_slave_start(role) != 0) {
+        while (1);
     }
 
     /* Set priority and stack size attributes */

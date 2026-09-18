@@ -166,6 +166,16 @@ void bootAppInitializeInterrupts(void)
     volatile uint32_t *ramVectors = (volatile uint32_t *)RAM_VECTOR_TABLE;
     uint32_t vectorIndex;
 
+    /* The bootloader can leave peripheral sources asserted or enabled.  The
+     * relocated application has not installed its driver HWIs yet, so mask
+     * and unpend every external interrupt before replacing VTOR.  Individual
+     * drivers (RF, UART, I2C, ...) enable their own IRQ only after plugging
+     * the corresponding handler. */
+    HWREG(NVIC_DIS0) = NVIC_DIS0_INT_M;
+    HWREG(NVIC_DIS1) = NVIC_DIS1_INT_M;
+    HWREG(NVIC_UNPEND0) = NVIC_UNPEND0_INT_M;
+    HWREG(NVIC_UNPEND1) = NVIC_UNPEND1_INT_M;
+
     /* Copy app exceptions, not the bootloader's exceptions at flash address 0. */
     for (vectorIndex = 0; vectorIndex < SYSTEM_VECTOR_COUNT; vectorIndex++) {
         ramVectors[vectorIndex] = flashVectors[vectorIndex];

@@ -6,6 +6,7 @@
 #include "firmware_mode.h"
 #include "firmware_startup.h"
 #include "firmware_tx.h"
+#include "i2c_slave.h"
 #include "rf_packet_queue.h"
 
 #include <pthread.h>
@@ -32,6 +33,7 @@ static CliCommand runtimeCommands[] = {
     { "rx", "rx status | rx dump on|off", NULL },
     { "bootloader", "reboot into UART firmware updater", NULL },
     { "version", "show firmware version", NULL },
+    { "ipc", "ipc dump on|off", i2c_slave_cli_command },
     { "stack", "show SYS/BIOS task stack high-water marks", stack_command }
 };
 
@@ -74,6 +76,7 @@ static const char *stack_task_name(Task_Handle task)
     if (function == (Task_FuncPtr)cliThread) return "cli";
     if (function == (Task_FuncPtr)firmware_rx_thread) return "radio_rx";
     if (function == (Task_FuncPtr)firmware_tx_thread) return "radio_tx";
+    if (function == (Task_FuncPtr)i2c_slave_thread) return "i2c_slave";
     if (function == (Task_FuncPtr)rf_packet_print_thread) return "packet_print";
     if (function == (Task_FuncPtr)Idle_loop) return "idle";
     return "unnamed";
@@ -162,7 +165,7 @@ void *cliThread(void *arg0)
              firmware_role_name(role));
     cli_ok(readyMessage);
     snprintf(readyMessage, sizeof(readyMessage),
-             "cli=ready count=%lu commands=help,%s,bootloader,version",
+             "cli=ready count=%lu commands=help,%s,bootloader,version,ipc,stack",
              (unsigned long)readyCount++, firmware_role_name(role));
     cli_ok(readyMessage);
 

@@ -92,8 +92,8 @@ extern const PIN_Config BoardGpioInitTable[];
 #define CC1310_LAUNCHXL_GPIO_LED_OFF          0
 
 /* I2C */
-#define CC1310_LAUNCHXL_I2C0_SCL0             IOID_4
-#define CC1310_LAUNCHXL_I2C0_SDA0             IOID_5
+#define CC1310_LAUNCHXL_I2C0_SCL0             IOID_16
+#define CC1310_LAUNCHXL_I2C0_SDA0             IOID_17
 
 /* I2S */
 #define CC1310_LAUNCHXL_I2S_ADO               IOID_25

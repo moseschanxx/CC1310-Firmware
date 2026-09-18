@@ -10,12 +10,13 @@
 - TX：通过 CLI 发送 30-byte 同步时间包或帧同步包。
 - 启动角色：metadata 为 `tx` 时运行 TX，其他情况默认 RX。
 - RF 设置在 `smartrf_settings/smartrf_settings.c`：当前为 **433.000 MHz、50 kBaud、2-GFSK、-10 dBm**。修改频率、功率或调制参数前须评估硬件能力和当地无线法规。
-- UART CLI：`Board_UART0`，115200 8N1；具体命令参见 [CLI.md](CLI.md)。
+- UART CLI：`Board_UART0`，115200 8N1；具体命令参见 [`cli.md`](cli.md)。
+- I2C slave：I2C0、7-bit 地址 `0x2A`，SCL/DIO16、SDA/DIO17。两个引脚均为内部上拉、开漏和 2 mA 驱动配置；没有外部上拉时只适合短、低电容总线。该接口由 driverlib 和 SYS/BIOS Hwi 直接管理，不能与 TI master-only `I2C` driver 共用；完整协议见 [`i2c_slave.md`](i2c_slave.md)。
 - DIO1 默认在 TX 执行和 RX 处理期间输出时序脉冲，供延迟测量使用。
 
 ## 构建
 
-构建依赖 TI ARM CGT、SimpleLink CC13x0 SDK 4.20.02.07、XDCtools/TI-RTOS。脚本默认使用工作区相邻的 `../ti/ti-cgt-arm_18.12.5.LTS`，SDK 路径为 `/Applications/ti/simplelink_cc13x0_sdk_4_20_02_07`。
+构建依赖 TI ARM CGT、SimpleLink CC13x0 SDK 4.20.02.07、XDCtools/TI-RTOS。脚本默认使用项目内的 `toolchains/ti-cgt-arm_18.12.5.LTS`；SDK 默认路径为 `/Applications/ti/simplelink_cc13x0_sdk_4_20_02_07`，可通过 `SIMPLELINK_SDK` 覆盖。也可通过 `TI_ARM_CGT` 覆盖编译器目录。
 
 在 `firmware/` 中执行：
 
@@ -39,9 +40,9 @@ python3 ../tools/fw_package.py --verify boot_build/nonrom_test/firmware.pkg
 
 ## 运行模型
 
-主 radio Task 的优先级为 2；CLI 和 RX 的 `packet_print` Task 优先级为 1。RX 角色创建 radio、CLI 和 packet-print 三个应用 Task；TX 角色创建 radio 和 CLI Task。`stack` CLI 命令可查看每个 Task 的栈高水位，作为缩减 SRAM 前的实测依据。
+主 radio Task 的优先级为 2；CLI、RX 的 `packet_print` 和 I2C 的 `i2c_slave` worker 均为优先级 1。CLI 栈为 2048 字节，I2C worker 栈为 1024 字节。RX 角色创建 radio、CLI 和 packet-print Task；TX 角色创建 radio 和 CLI Task；无论角色都会启动 I2C worker。I2C Hwi 只负责字节收发和记录入队，`ipc dump` 的 UART 输出由 worker 完成。`stack` CLI 命令可查看每个 Task 的栈高水位，作为缩减 SRAM 前的实测依据。
 
-应用仅在 RF 初始化完成且 UART CLI 已打开、命令表已安装后调用 `bl_confirm_boot()`。若需要 OTA 更新，使用 CLI 的 `bootloader` 命令请求复位到 bootloader；烧录和恢复流程见 [JLINK.md](JLINK.md)。
+启动代码会先屏蔽 bootloader 遗留的外部中断，再完成应用的向量和驱动初始化，避免旧的外设中断在新处理函数安装前触发。应用仅在 RF 初始化完成且 UART CLI 已打开、命令表已安装后调用 `bl_confirm_boot()`。若需要 OTA 更新，使用 CLI 的 `bootloader` 命令请求复位到 bootloader；烧录和恢复流程见 [`build_flash.md`](build_flash.md)。
 
 ## 目录
 

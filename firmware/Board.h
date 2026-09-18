@@ -98,6 +98,8 @@ extern "C" {
 
 #define Board_I2C0              CC1310_LAUNCHXL_I2C0
 #define Board_I2C_TMP           CC1310_LAUNCHXL_I2C0
+#define Board_I2C0_SCL0         CC1310_LAUNCHXL_I2C0_SCL0
+#define Board_I2C0_SDA0         CC1310_LAUNCHXL_I2C0_SDA0
 
 #define Board_I2S0              CC1310_LAUNCHXL_I2S0
 #define Board_I2S_ADO           CC1310_LAUNCHXL_I2S_ADO
