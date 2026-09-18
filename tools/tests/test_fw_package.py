@@ -37,6 +37,14 @@ class FirmwarePackageTests(unittest.TestCase):
         self.assertEqual(parsed["image"], b"abcde\xff\xff\xff")
         self.assertEqual(parsed["size"], 8)
 
+    def test_formats_packed_semantic_version(self):
+        version = (2 << 16) | (17 << 8) | 255
+        self.assertEqual(fw_package.format_version(version), "2.17.255")
+
+    def test_rejects_non_reserved_most_significant_version_byte(self):
+        with self.assertRaisesRegex(ValueError, "most-significant byte"):
+            fw_package.build(b"test", self.TARGET_ID, 0x01000000)
+
     def test_rejects_corrupted_header_crc(self):
         package = bytearray(self.build_package())
         package[fw_package.HEADER.size - 1] ^= 0x01

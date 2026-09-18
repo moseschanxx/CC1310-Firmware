@@ -10,12 +10,46 @@ try:
 except ImportError as exc:
     raise SystemExit("pyserial is required: python3 -m pip install pyserial") from exc
 
-from fw_package import parse
+from fw_package import format_version, parse
 from fw_protocol import HELLO, INFO, BEGIN, READY, DATA, ACK, NACK, END, COMPLETE, SET_ROLE, encode, decode
 
 FRAME_TIMEOUT = 0.5
 FRAME_RETRIES = 5
 CHUNK_SIZE = 128
+BOOT_STATES = {
+    1: "valid_application",
+    2: "update_requested",
+    3: "update_in_progress",
+}
+ROLES = {
+    0: "unset",
+    1: "rx",
+    2: "tx",
+}
+TARGET_NAMES = {
+    0x4343314D: "CC1M",
+}
+
+
+def format_enum(value, names):
+    return "%s(%u)" % (names.get(value, "unknown"), value)
+
+
+def format_target(target):
+    return "%s(0x%08X)" % (TARGET_NAMES.get(target, "unknown"), target)
+
+
+def format_info(info):
+    fields = [
+        "target=%s" % format_target(info["target"]),
+        "state=%s" % format_enum(info["state"], BOOT_STATES),
+        "max_size=%u" % info["max_size"],
+        "image_size=%u" % info["image_size"],
+        "version=%s(0x%08X)" % (format_version(info["version"]), info["version"]),
+    ]
+    if "role" in info:
+        fields.append("role=%s" % format_enum(info["role"], ROLES))
+    return "INFO " + " ".join(fields)
 
 
 class Updater:
@@ -52,11 +86,12 @@ class Updater:
     def info(self):
         _, payload = self.request(HELLO, expected=(INFO,))
         if len(payload) not in (20, 24): raise ValueError("invalid INFO response")
+        version = int.from_bytes(payload[16:20], "little")
         info = {"target": int.from_bytes(payload[0:4], "little"),
                 "state": int.from_bytes(payload[4:8], "little"),
                 "max_size": int.from_bytes(payload[8:12], "little"),
                 "image_size": int.from_bytes(payload[12:16], "little"),
-                "version": int.from_bytes(payload[16:20], "little")}
+                "version": version}
         if len(payload) == 24: info["role"] = int.from_bytes(payload[20:24], "little")
         return info
 
@@ -106,10 +141,12 @@ def main():
     updater = Updater(args.port, args.baud)
     try:
         if args.command == "info":
-            print("INFO " + " ".join("%s=%s" % item for item in updater.info().items()))
+            print(format_info(updater.info()))
         elif args.command == "flash":
             package = args.package.read_bytes(); details = parse(package)
-            print("INFO package target=0x%08X version=%u size=%u" % (details["target"], details["version"], details["size"]))
+            print("INFO package target=0x%08X version=%s code=0x%08X size=%u" %
+                  (details["target"], format_version(details["version"]),
+                   details["version"], details["size"]))
             updater.flash(package, args.role); print("COMPLETE")
         elif args.command == "set-role":
             updater.set_role(args.role); print("COMPLETE")

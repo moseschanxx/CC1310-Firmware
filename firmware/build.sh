@@ -4,7 +4,7 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "${script_dir}/.." && pwd)"
-package_version="${FW_PACKAGE_VERSION:-110}"
+version_header="${script_dir}/firmware_build.h"
 build_dir="${script_dir}/boot_build/nonrom_test"
 tool_root="${TI_ARM_CGT:-${root}/toolchains/ti-cgt-arm_18.12.5.LTS}"
 sdk="${SIMPLELINK_SDK:-/Applications/ti/simplelink_cc13x0_sdk_4_20_02_07}"
@@ -43,6 +43,25 @@ case "${1:-}" in
         exit 2
         ;;
 esac
+
+if [[ -n "${FW_PACKAGE_VERSION+x}" ]]; then
+    echo "FW_PACKAGE_VERSION is no longer supported; update FIRMWARE_VERSION in ${version_header}" >&2
+    exit 2
+fi
+
+firmware_version="$(sed -nE 's/^[[:space:]]*#define[[:space:]]+FIRMWARE_VERSION[[:space:]]+"([0-9]+\.[0-9]+\.[0-9]+)"[[:space:]]*$/\1/p' "${version_header}")"
+if [[ ! "${firmware_version}" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+    echo "FIRMWARE_VERSION must be a SemVer string (major.minor.patch): ${version_header}" >&2
+    exit 2
+fi
+major_version="${BASH_REMATCH[1]}"
+minor_version="${BASH_REMATCH[2]}"
+patch_version="${BASH_REMATCH[3]}"
+if (( major_version > 255 || minor_version > 255 || patch_version > 255 )); then
+    echo "FIRMWARE_VERSION components must not exceed 255: ${firmware_version}" >&2
+    exit 2
+fi
+package_version=$(( (major_version << 16) | (minor_version << 8) | patch_version ))
 
 [[ -x "${tool}" && -x "${hex}" && -d "${sdk}" ]] || {
     echo "Missing TI compiler, HEX tool, or SDK (TI_ARM_CGT=${tool_root}, SIMPLELINK_SDK=${sdk})" >&2
@@ -87,4 +106,5 @@ done
 python3 "${root}/tools/fw_package.py" --verify "${ota_package}"
 echo "Firmware OUT: ${out_file}"
 echo "Firmware HEX: ${hex_file}"
-echo "Firmware OTA package: ${ota_package} (version ${package_version})"
+printf 'Firmware OTA package: %s (version %s, code 0x%08X)\n' \
+    "${ota_package}" "${firmware_version}" "${package_version}"

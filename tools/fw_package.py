@@ -16,6 +16,15 @@ def crc32(data):
     return zlib.crc32(data) & 0xFFFFFFFF
 
 
+def format_version(version):
+    """Format the packed 0x00MMmmpp firmware version as major.minor.patch."""
+    if not 0 <= version <= 0x00FFFFFF:
+        raise ValueError("version must reserve its most-significant byte")
+    return "%u.%u.%u" % ((version >> 16) & 0xFF,
+                           (version >> 8) & 0xFF,
+                           version & 0xFF)
+
+
 def parse(package):
     if len(package) < HEADER.size:
         raise ValueError("package is shorter than its header")
@@ -27,6 +36,7 @@ def parse(package):
         raise ValueError("header CRC32 mismatch")
     if address != APP_ADDRESS or size > MAX_IMAGE_SIZE or size == 0:
         raise ValueError("invalid application address or size")
+    format_version(version)
     image = package[HEADER.size:]
     if len(image) != size:
         raise ValueError("package length does not match header image size")
@@ -39,6 +49,7 @@ def parse(package):
 def build(image, target, version):
     # CC1310 FlashProgram accepts word-sized writes. Padding is executable
     # erased-flash data and is included in the image CRC and package length.
+    format_version(version)
     image += b"\xFF" * ((-len(image)) & 3)
     if not image or len(image) > MAX_IMAGE_SIZE:
         raise ValueError("image size is outside the App slot")
@@ -57,8 +68,9 @@ def main():
     args = parser.parse_args()
     if args.verify:
         info = parse(args.verify.read_bytes())
-        print("OK target=0x%08X version=%u size=%u crc32=%08X" %
-              (info["target"], info["version"], info["size"], info["image_crc"]))
+        print("OK target=0x%08X version=%s code=0x%08X size=%u crc32=%08X" %
+              (info["target"], format_version(info["version"]), info["version"],
+               info["size"], info["image_crc"]))
         return
     if None in (args.input, args.output, args.target_id, args.version):
         parser.error("use --verify, or provide --input --output --target-id --version")

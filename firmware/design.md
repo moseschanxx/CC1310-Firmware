@@ -20,10 +20,10 @@
 在 `firmware/` 中执行：
 
 ```sh
-FW_PACKAGE_VERSION=111 ./build.sh
+./build.sh
 ```
 
-`FW_PACKAGE_VERSION` 默认为 `110`。每次发布应使用新的递增值。成功后生成：
+`firmware_build.h` 中的 `FIRMWARE_VERSION` 是 CLI 与 OTA package 的唯一发布版本源。构建脚本将 `major.minor.patch` 编码为 32-bit 的 `0x00MMmmpp`：最高字节保留为 0，`major`、`minor`、`patch` 各占一个字节（范围均为 0–255），并写入 OTA package header。主机校验和设备 `info` 均显示为 `major.minor.patch`；每次发布应递增该语义版本。成功后生成：
 
 | 文件 | 用途 |
 | --- | --- |

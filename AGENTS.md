@@ -30,7 +30,7 @@ From the workspace root:
 
 ```sh
 ./bootloader/build.sh
-FW_PACKAGE_VERSION=111 ./firmware/build.sh
+./firmware/build.sh
 python3 -m unittest discover -s tools/tests -v
 ```
 
@@ -40,8 +40,11 @@ The firmware build creates these release inputs under `firmware/boot_build/nonro
 - `firmware.hex` — address-preserving Intel HEX
 - `firmware.pkg` — CRC32-protected UART OTA package, target ID `0x4343314D` (`CC1M`)
 
-Use a new monotonically increasing `FW_PACKAGE_VERSION` for releases. The build already verifies the
-generated package; it can be checked again with:
+Use a new monotonically increasing semantic `FIRMWARE_VERSION` in
+`firmware/firmware_build.h` for releases. The build encodes it as `0x00MMmmpp`
+(one byte each for major, minor, and patch; the most-significant byte is reserved)
+in the package header and verifies the generated package;
+it can be checked again with:
 
 ```sh
 python3 tools/fw_package.py --verify firmware/boot_build/nonrom_test/firmware.pkg

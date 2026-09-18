@@ -41,10 +41,10 @@
 ```sh
 TI_ARM_CGT="$PWD/toolchains/ti-cgt-arm_18.12.5.LTS" \
 SIMPLELINK_SDK=/path/to/simplelink_cc13x0_sdk_4_20_02_07 \
-FW_PACKAGE_VERSION=111 ./firmware/build.sh
+./firmware/build.sh
 ```
 
-`FW_PACKAGE_VERSION` 必须在每次发布时递增。构建脚本会拒绝缺少编译器、HEX 工具或 SDK 的环境。
+`firmware/firmware_build.h` 中的 `FIRMWARE_VERSION` 是唯一发布版本源，必须在每次发布时递增。构建脚本将 `major.minor.patch` 编码为 32-bit 的 `0x00MMmmpp`：最高字节保留为 0，`major`、`minor`、`patch` 各占一个字节（范围均为 0–255），例如 `0.2.0` 编码为 `0x00000200`。OTA header 以该 4-byte 值存储，主机工具与设备 `info` 均显示为 `major.minor.patch`。构建脚本会拒绝缺少编译器、HEX 工具或 SDK 的环境。
 
 ## 编译
 
@@ -52,7 +52,7 @@ FW_PACKAGE_VERSION=111 ./firmware/build.sh
 
 ```sh
 ./bootloader/build.sh
-FW_PACKAGE_VERSION=111 ./firmware/build.sh
+./firmware/build.sh
 python3 -m unittest discover -s tools/tests -v
 ```
 
@@ -120,6 +120,10 @@ python3 tools/fw_update.py --port /dev/cu.usbserial-XXXX set-role --role tx
 ```sh
 python3 tools/fw_update.py --port /dev/cu.usbserial-XXXX info
 ```
+
+例如，`info` 会显示 `target=CC1M(0x4343314D)`、
+`version=0.2.0(0x00000200)`、`role=rx(1)`；状态也会以
+`state=update_requested(2)` 的形式同时给出名称和原始数值。
 
 bootloader 会校验 package header、目标 ID、应用地址和 CRC32。它使用单 App slot，不支持断点续传或 A/B 回滚；更新中断、镜像异常或连续三次未确认启动都会使设备进入 UART 更新模式。
 

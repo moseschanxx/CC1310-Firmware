@@ -13,7 +13,7 @@
 
 ```sh
 SIMPLELINK_SDK=/opt/ti/simplelink_cc13x0_sdk_4_20_02_07 \
-    FW_PACKAGE_VERSION=111 ./firmware/build.sh
+    ./firmware/build.sh
 ```
 
 构建脚本会在开始时检查工具链中的 `armcl`、`armhex` 和 SDK 根目录。缺少 SDK 时，即使 ARM 编译器存在，也会因缺少 CC1310 的平台头文件和库而无法完成编译或链接。
@@ -38,7 +38,7 @@ SIMPLELINK_SDK=/opt/ti/simplelink_cc13x0_sdk_4_20_02_07 \
 
 ```sh
 ./bootloader/build.sh
-FW_PACKAGE_VERSION=111 ./firmware/build.sh
+./firmware/build.sh
 ```
 
 清理可再生构建产物后重新构建：
@@ -47,7 +47,7 @@ FW_PACKAGE_VERSION=111 ./firmware/build.sh
 ./bootloader/build.sh clean
 ./firmware/build.sh clean
 ./bootloader/build.sh
-FW_PACKAGE_VERSION=111 ./firmware/build.sh
+./firmware/build.sh
 ```
 
 `bootloader/build.sh clean` 删除专用的 `bootloader/build/` 输出目录。`firmware/build.sh clean` 仅删除 `firmware/boot_build/nonrom_test/` 下的对象文件、映像、映射文件和 OTA 包，保留版本控制的 TI-RTOS 配置源文件。

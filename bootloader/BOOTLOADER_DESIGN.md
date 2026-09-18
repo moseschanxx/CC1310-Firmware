@@ -147,7 +147,7 @@ payload | frameCrc16:u16
 
 | 消息 | 方向 | Payload |
 | --- | --- | --- |
-| `HELLO` / `INFO` | Host → target / target → host | 空 / target、状态、slot 大小、镜像大小、版本、角色（24 B）。 |
+| `HELLO` / `INFO` | Host → target / target → host | 空 / target、状态、slot 大小、镜像大小、版本、角色（24 B）。版本以 `0x00MMmmpp` 的 `u32` 传输，主机显示为 `major.minor.patch`。 |
 | `BEGIN` / `READY` | Host → target / target → host | `FwPackageHeader + role:u32` / 起始 offset。 |
 | `DATA` / `ACK` / `NACK` | Host / target | `offset:u32 + 1..128 B`（4-byte 对齐）/ 下一个期望 offset。 |
 | `END` / `COMPLETE` | Host / target | 空 / 空。 |
@@ -165,7 +165,7 @@ payload | frameCrc16:u16
 构建统一应用：
 
 ```sh
-FW_PACKAGE_VERSION=111 ./firmware/build.sh
+./firmware/build.sh
 python3 tools/fw_package.py --verify firmware/boot_build/nonrom_test/firmware.pkg
 ```
 
@@ -186,7 +186,7 @@ python3 tools/fw_update.py --port /dev/cu.usbserial-XXXX set-role --role tx
 
 ```sh
 ./bootloader/build.sh
-FW_PACKAGE_VERSION=111 ./firmware/build.sh
+./firmware/build.sh
 ./firmware/flash_all_jlink.sh -r rx
 ```
 

@@ -68,8 +68,9 @@ def main():
              for offset in range(0, len(record), 16)]
     lines.append(ihex_record(0, 1, b""))
     args.output.write_text("".join(lines))
-    print("Wrote %s: valid metadata for version=%u size=%u crc32=%08X" %
-          (args.output, package["version"], package["size"], package["image_crc"]))
+    print("Wrote %s: valid metadata for version=%s code=0x%08X size=%u crc32=%08X" %
+          (args.output, fw_package.format_version(package["version"]),
+           package["version"], package["size"], package["image_crc"]))
 
 
 if __name__ == "__main__":
