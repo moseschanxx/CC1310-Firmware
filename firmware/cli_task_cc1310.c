@@ -4,6 +4,7 @@
 #include "cli_bootloader.h"
 #include "firmware_build.h"
 #include "firmware_mode.h"
+#include "firmware_startup.h"
 #include "firmware_tx.h"
 #include "rf_packet_queue.h"
 
@@ -156,6 +157,7 @@ void *cliThread(void *arg0)
     runtimeCommands[1] = cli_bootloader_command;
     runtimeCommands[2].handler = version_command;
     cli_init(runtimeCommands, sizeof(runtimeCommands) / sizeof(runtimeCommands[0]));
+    firmwareStartupMarkCliReady();
     snprintf(readyMessage, sizeof(readyMessage), "version=" FIRMWARE_VERSION " role=%s",
              firmware_role_name(role));
     cli_ok(readyMessage);

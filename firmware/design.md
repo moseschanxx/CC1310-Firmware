@@ -41,7 +41,7 @@ python3 ../tools/fw_package.py --verify boot_build/nonrom_test/firmware.pkg
 
 主 radio Task 的优先级为 2；CLI 和 RX 的 `packet_print` Task 优先级为 1。RX 角色创建 radio、CLI 和 packet-print 三个应用 Task；TX 角色创建 radio 和 CLI Task。`stack` CLI 命令可查看每个 Task 的栈高水位，作为缩减 SRAM 前的实测依据。
 
-应用在成功初始化 RF 后调用 `bl_confirm_boot()`。若需要 OTA 更新，使用 CLI 的 `bootloader` 命令请求复位到 bootloader；烧录和恢复流程见 [JLINK.md](JLINK.md)。
+应用仅在 RF 初始化完成且 UART CLI 已打开、命令表已安装后调用 `bl_confirm_boot()`。若需要 OTA 更新，使用 CLI 的 `bootloader` 命令请求复位到 bootloader；烧录和恢复流程见 [JLINK.md](JLINK.md)。
 
 ## 目录
 

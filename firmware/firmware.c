@@ -50,6 +50,7 @@
 #include "RFQueue.h"
 #include "rf_packet_queue.h"
 #include "boot_api.h"
+#include "firmware_startup.h"
 #include "smartrf_settings/smartrf_settings.h"
 
 /***** Defines *****/
@@ -172,11 +173,14 @@ void *firmware_rx_thread(void *arg0)
     rfHandle = RF_open(&rfObject, &RF_prop, (RF_RadioSetup*)&RF_cmdPropRadioDivSetup, &rfParams);
 #endif// DeviceFamily_CC26X0R2
 
-    /* Set the frequency */
-    RF_postCmd(rfHandle, (RF_Op*)&RF_cmdFs, RF_PriorityNormal, NULL, 0);
+    if (rfHandle == NULL ||
+        RF_runCmd(rfHandle, (RF_Op*)&RF_cmdFs, RF_PriorityNormal, NULL, 0) !=
+        RF_EventLastCmdDone) {
+        while (1);
+    }
 
-    /* Confirm only after radio initialization succeeded. */
-    bl_confirm_boot();
+    /* Do not confirm the boot until UART CLI setup also succeeds. */
+    firmwareStartupMarkRfReady();
 
     /* Enter RX mode and stay forever in RX */
     RF_EventMask terminationReason = RF_runCmd(rfHandle, (RF_Op*)&RF_cmdPropRx,

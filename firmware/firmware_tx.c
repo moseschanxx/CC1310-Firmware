@@ -53,6 +53,7 @@
 #include "cli_core.h"
 #include "cli_task_cc1310.h"
 #include "firmware_tx.h"
+#include "firmware_startup.h"
 
 /***** Defines *****/
 
@@ -307,13 +308,14 @@ void *firmware_tx_thread(void *arg0)
 
     /* Tune synchronously before accepting CLI commands. Keeping the radio
      * ready avoids a yield/power-down race when a second command arrives. */
-    if (RF_runCmd(rfHandle, (RF_Op*)&RF_cmdFs, RF_PriorityNormal, NULL, 0) !=
+    if (rfHandle == NULL ||
+        RF_runCmd(rfHandle, (RF_Op*)&RF_cmdFs, RF_PriorityNormal, NULL, 0) !=
         RF_EventLastCmdDone) {
         while (1);
     }
 
-    /* The selected TX role has initialized UART and the RF synthesizer. */
-    bl_confirm_boot();
+    /* Do not confirm the boot until UART CLI setup also succeeds. */
+    firmwareStartupMarkRfReady();
 
 #if CONTINUOUS_TX_TEST_MODE
     /*
