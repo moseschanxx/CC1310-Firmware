@@ -1,0 +1,27 @@
+[
+   {
+      "directory" : "/Users/xiulin/workspace_ccstheia/bootloader/Debug",
+      "command"   : "clang++ -I\"/Users/xiulin/workspace_ccstheia/bootloader\" -I\"/Applications/ti/simplelink_cc13x0_sdk_4_20_02_07/source\" -I\"/Applications/ti/simplelink_cc13x0_sdk_4_20_02_07/kernel/nortos\" -I\"/Applications/ti/simplelink_cc13x0_sdk_4_20_02_07/kernel/nortos/posix\" -I\"/Users/xiulin/ti/ti-cgt-arm_18.12.5.LTS/include\" -DDeviceFamily_CC13X0 -xc",
+      "file"      : "/Users/xiulin/workspace_ccstheia/bootloader/CC1310_LAUNCHXL.c"
+   },
+   {
+      "directory" : "/Users/xiulin/workspace_ccstheia/bootloader/Debug",
+      "command"   : "clang++ -I\"/Users/xiulin/workspace_ccstheia/bootloader\" -I\"/Applications/ti/simplelink_cc13x0_sdk_4_20_02_07/source\" -I\"/Applications/ti/simplelink_cc13x0_sdk_4_20_02_07/kernel/nortos\" -I\"/Applications/ti/simplelink_cc13x0_sdk_4_20_02_07/kernel/nortos/posix\" -I\"/Users/xiulin/ti/ti-cgt-arm_18.12.5.LTS/include\" -DDeviceFamily_CC13X0 -xc",
+      "file"      : "/Users/xiulin/workspace_ccstheia/bootloader/CC1310_LAUNCHXL_fxns.c"
+   },
+   {
+      "directory" : "/Users/xiulin/workspace_ccstheia/bootloader/Debug",
+      "command"   : "clang++ -I\"/Users/xiulin/workspace_ccstheia/bootloader\" -I\"/Applications/ti/simplelink_cc13x0_sdk_4_20_02_07/source\" -I\"/Applications/ti/simplelink_cc13x0_sdk_4_20_02_07/kernel/nortos\" -I\"/Applications/ti/simplelink_cc13x0_sdk_4_20_02_07/kernel/nortos/posix\" -I\"/Users/xiulin/ti/ti-cgt-arm_18.12.5.LTS/include\" -DDeviceFamily_CC13X0 -xc",
+      "file"      : "/Users/xiulin/workspace_ccstheia/bootloader/ccfg.c"
+   },
+   {
+      "directory" : "/Users/xiulin/workspace_ccstheia/bootloader/Debug",
+      "command"   : "clang++ -I\"/Users/xiulin/workspace_ccstheia/bootloader\" -I\"/Applications/ti/simplelink_cc13x0_sdk_4_20_02_07/source\" -I\"/Applications/ti/simplelink_cc13x0_sdk_4_20_02_07/kernel/nortos\" -I\"/Applications/ti/simplelink_cc13x0_sdk_4_20_02_07/kernel/nortos/posix\" -I\"/Users/xiulin/ti/ti-cgt-arm_18.12.5.LTS/include\" -DDeviceFamily_CC13X0 -xc",
+      "file"      : "/Users/xiulin/workspace_ccstheia/bootloader/main_nortos.c"
+   },
+   {
+      "directory" : "/Users/xiulin/workspace_ccstheia/bootloader/Debug",
+      "command"   : "clang++ -I\"/Users/xiulin/workspace_ccstheia/bootloader\" -I\"/Applications/ti/simplelink_cc13x0_sdk_4_20_02_07/source\" -I\"/Applications/ti/simplelink_cc13x0_sdk_4_20_02_07/kernel/nortos\" -I\"/Applications/ti/simplelink_cc13x0_sdk_4_20_02_07/kernel/nortos/posix\" -I\"/Users/xiulin/ti/ti-cgt-arm_18.12.5.LTS/include\" -DDeviceFamily_CC13X0 -xc",
+      "file"      : "/Users/xiulin/workspace_ccstheia/bootloader/bootloader.c"
+   }
+]

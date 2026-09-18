@@ -1,0 +1,11 @@
+[
+    {
+        "metadataVersion": "3.0.0",
+        "id": "arm.ti",
+        "name": "Arm code generation tools - compiler",
+        "version": "18.12.5",
+        "type": "software",
+        "allowPartialDownload": "false",
+        "description": "This is a long-term support release of the ARM Code Generation Tools (CGT) containing new enhancements and features. The ARM CGT provides software development tools including the compiler, assembler, and linker, among others, which can be used to develop applications with C/C++ source code for loading and running on ARM core processors."
+    }
+]

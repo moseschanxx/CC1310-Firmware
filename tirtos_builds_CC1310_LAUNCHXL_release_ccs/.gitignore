@@ -1,0 +1,4 @@
+# CCS/TI-RTOS build artifacts and local language-server cache.
+Debug/.clangd/
+Debug/**/*.obj
+src/**/*.obj

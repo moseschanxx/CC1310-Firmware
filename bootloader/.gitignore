@@ -1,0 +1,11 @@
+*.obj
+*.map
+*.d
+*.d_raw
+*.hex
+*.out
+.DS_Store
+
+# Local command-line build output and language-server cache.
+build/
+Debug/.clangd/

@@ -1,0 +1,17 @@
+*.obj
+*.map
+*.d
+*.d_raw
+*.hex
+*.out
+*.pkg
+*.bin
+.DS_Store
+
+# Generated boot-app configuration, intermediate files, and OTA packages.
+# The current boot_build snapshot is intentionally versioned with -f.
+boot_build.tgz
+boot_build/configPkg*/
+Debug/boot_build/
+Debug/.clangd/
+Debug/*_linkInfo.xml
