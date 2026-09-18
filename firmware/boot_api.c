@@ -1,10 +1,9 @@
 #include "boot_api.h"
 #include <stdint.h>
-#include <ti/devices/cc13x0/driverlib/sys_ctrl.h>
 
 #define BL_API_ADDRESS 0x00005000u
 #define BL_API_MAGIC 0x424C4150u
-#define BL_API_VERSION 1u
+#define BL_API_VERSION 2u
 #define BL_HANDOFF_ADDRESS 0x20004F00u
 #define BL_HANDOFF_MAGIC 0x484E4446u
 
@@ -12,8 +11,8 @@ typedef struct {
     uint32_t magic;
     uint16_t abiVersion;
     uint16_t reserved;
-    void (*confirmBoot)(uint32_t bootId);
-    void (*requestUpdate)(void);
+    int (*confirmBoot)(uint32_t bootId);
+    int (*requestUpdate)(void);
 } BlApi;
 
 typedef struct {
@@ -28,23 +27,23 @@ static const BlApi *api(void)
     return (table->magic == BL_API_MAGIC && table->abiVersion == BL_API_VERSION) ? table : 0;
 }
 
-void bl_confirm_boot(void)
+int bl_confirm_boot(void)
 {
     const BlApi *table = api();
     volatile BlHandoff *handoff = (volatile BlHandoff *)BL_HANDOFF_ADDRESS;
     if (table && handoff->magic == BL_HANDOFF_MAGIC) {
-        table->confirmBoot(handoff->bootId);
-        handoff->magic = 0u;
+        if (table->confirmBoot(handoff->bootId) == 0) {
+            handoff->magic = 0u;
+            return 0;
+        }
     }
+    return -1;
 }
 
-void bl_request_update(void)
+int bl_request_update(void)
 {
     const BlApi *table = api();
-    if (!table) return;
-    table->requestUpdate();
-    SysCtrlSystemReset();
-    for (;;) { }
+    return table ? table->requestUpdate() : -1;
 }
 
 unsigned int bl_get_startup_role(void)

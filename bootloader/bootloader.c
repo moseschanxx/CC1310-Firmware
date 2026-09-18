@@ -28,7 +28,7 @@
 #define BOOT_FAILURE_LIMIT 3u
 #define METADATA_FORMAT_VERSION 2u
 #define PACKAGE_FORMAT_VERSION 1u
-#define BOOT_API_VERSION 1u
+#define BOOT_API_VERSION 2u
 #define PROTOCOL_VERSION 2u
 #define MAX_PROTOCOL_PAYLOAD 152u
 #define MAX_ENCODED_FRAME_SIZE 160u
@@ -73,8 +73,8 @@ typedef struct {
     uint32_t magic;
     uint16_t version;
     uint16_t reserved;
-    void (*confirmBoot)(uint32_t bootAttemptId);
-    void (*requestUpdate)(void);
+    int (*confirmBoot)(uint32_t bootAttemptId);
+    int (*requestUpdate)(void);
 } BootloaderApi;
 
 static UART_Handle updateUart;
@@ -230,22 +230,22 @@ writeRecord:
     return 0;
 }
 
-static void confirmApplicationBoot(uint32_t bootAttemptId)
+static int confirmApplicationBoot(uint32_t bootAttemptId)
 {
     BootMetadata metadata;
     if (readBootMetadata(&metadata) || metadata.bootAttemptId != bootAttemptId ||
-        metadata.confirmedBootAttemptId == bootAttemptId) return;
+        metadata.confirmedBootAttemptId == bootAttemptId) return -1;
     metadata.confirmedBootAttemptId = bootAttemptId;
     if (metadata.unconfirmedBootCount) metadata.unconfirmedBootCount--;
-    (void)appendMetadataRecord(&metadata);
+    return appendMetadataRecord(&metadata);
 }
 
-static void requestFirmwareUpdate(void)
+static int requestFirmwareUpdate(void)
 {
     BootMetadata metadata;
     if (readBootMetadata(&metadata)) setDefaultMetadata(&metadata);
     metadata.state = BOOT_STATE_UPDATE_REQUESTED;
-    (void)appendMetadataRecord(&metadata);
+    return appendMetadataRecord(&metadata);
 }
 
 /* The app reads this fixed flash address; it is the only bootloader ABI. */
@@ -492,9 +492,13 @@ static void runFirmwareUpdate(BootMetadata *metadata)
             metadata->unconfirmedBootCount = 0;
             metadata->bootAttemptId = 0;
             metadata->confirmedBootAttemptId = 0;
-            (void)appendMetadataRecord(metadata);
-            writeProtocolFrame(PROTOCOL_COMPLETE, sequenceNumber, NULL, 0);
-            SysCtrlSystemReset();
+            if (appendMetadataRecord(metadata)) {
+                /* Do not claim success while the boot decision remains stale. */
+                writeProtocolFrame(PROTOCOL_ERROR, sequenceNumber, NULL, 0);
+            } else {
+                writeProtocolFrame(PROTOCOL_COMPLETE, sequenceNumber, NULL, 0);
+                SysCtrlSystemReset();
+            }
         } else if (messageType == PROTOCOL_SET_ROLE && payloadLength == 4u &&
                    isValidAppRole(loadUint32Le(payload)) && isApplicationImageValid(metadata)) {
             metadata->state = BOOT_STATE_VALID_APPLICATION;
@@ -535,7 +539,11 @@ void *mainThread(void *argument)
     /* Increment before starting the app.  App confirmation decrements it. */
     metadata.unconfirmedBootCount++;
     metadata.bootAttemptId++;
-    (void)appendMetadataRecord(&metadata);
+    if (appendMetadataRecord(&metadata)) {
+        /* A failed boot-attempt record must never be followed by an untracked
+         * app handoff.  Keep this boot in the updater so it can be recovered. */
+        runFirmwareUpdate(&metadata);
+    }
     ((volatile BootHandoff *)BOOT_HANDOFF_RAM_ADDRESS)->magic = BOOT_HANDOFF_MAGIC;
     ((volatile BootHandoff *)BOOT_HANDOFF_RAM_ADDRESS)->bootAttemptId = metadata.bootAttemptId;
     ((volatile BootHandoff *)BOOT_HANDOFF_RAM_ADDRESS)->appRole = metadata.appRole;

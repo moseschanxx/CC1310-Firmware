@@ -93,20 +93,22 @@ Thumb 地址，并重算镜像 CRC32。随后关闭 SysTick、禁用/清除 NVIC
 
 ## Bootloader API
 
-应用只能通过固定 Flash 地址 `0x00005000` 的 ABI 调用 bootloader：
+应用只能通过固定 Flash 地址 `0x00005000` 的 ABI 调用 bootloader。当前 ABI 版本为 2；
+两个函数均以 `0` 表示 metadata 已成功持久化，非零表示失败：
 
 ```c
 typedef struct {
     uint32_t magic;                  /* BLAP */
-    uint16_t version;                /* 当前为 1 */
+    uint16_t version;                /* 当前为 2 */
     uint16_t reserved;
-    void (*confirmBoot)(uint32_t bootAttemptId);
-    void (*requestUpdate)(void);
+    int (*confirmBoot)(uint32_t bootAttemptId);
+    int (*requestUpdate)(void);
 } BootloaderApi;
 ```
 
-`boot_api.c` 先验证 API magic 与版本，再调用上述函数；不匹配时安全返回。CLI 的
-`bootloader` 命令会写 `UPDATE_REQUESTED` 后复位。
+`boot_api.c` 先验证 API magic 与版本，再调用上述函数；不匹配或 metadata 写入失败时
+安全返回。CLI 的 `bootloader` 命令只有成功写入 `UPDATE_REQUESTED` 后才复位；失败时保持
+当前应用运行并返回错误。
 
 ## Package format
 

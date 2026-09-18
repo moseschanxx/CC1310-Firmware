@@ -17,7 +17,7 @@ OK cli=ready count=0 commands=help,rx,bootloader,version
 | --- | --- |
 | `help [command]` | 列出所有命令，或显示某一命令的用法。 |
 | `version` | 输出编译时的固件版本。 |
-| `bootloader` | 输出 `OK rebooting_to_bootloader` 后复位并进入 UART OTA 更新器。 |
+| `bootloader` | metadata 成功持久化后输出 `OK rebooting_to_bootloader`，复位并进入 UART OTA 更新器；写入失败时输出 `ERR BOOT metadata_write_failed` 并保持当前应用运行。 |
 | `stack` | 列出 SYS/BIOS Task 的栈高水位。 |
 
 `stack` 的输出格式如下：
