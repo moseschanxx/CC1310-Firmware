@@ -2,17 +2,18 @@
 
 ## Scope and security boundary
 
-该 bootloader 面向 CC1310F128，在 Flash `0x00000000` 启动，通过 UART 安装并启动位于
-`0x00008000` 的统一应用镜像。应用 package 的目标 ID 固定为 `0x4343314D`（`CC1M`）；
-同一镜像由 metadata 中的角色选择在启动时运行 RX 或 TX。
+This bootloader targets the CC1310F128. It boots from Flash `0x00000000` and installs and launches the unified
+application image at `0x00008000` over UART. The application package's target ID is fixed at `0x4343314D`
+(`CC1M`); the same image runs as RX or TX at boot according to the role selected in metadata.
 
-该设计采用单一 App slot，而非 A/B 应用 slot。它提供 header、metadata 和镜像 CRC32
-完整性检查，可防止意外传输或 Flash 损坏，但**不提供来源认证**。持有升级 UART 物理访问
-权限的人能够安装自行构造且 CRC 正确的镜像；部署时必须控制升级接口的物理访问。
+The design uses a single App slot rather than A/B application slots. It provides header, metadata and image
+CRC32 integrity checks that guard against accidental transfer or Flash corruption, but it **provides no origin
+authentication**. Anyone with physical access to the update UART can install a self-built image with a correct
+CRC; physical access to the update interface must be controlled in deployment.
 
-## Flash 和 SRAM 布局
+## Flash and SRAM layout
 
-| 区域 | 地址范围 | 大小 | 所有者 |
+| Region | Address range | Size | Owner |
 | --- | --- | ---: | --- |
 | Bootloader | `0x00000000–0x00005FFF` | 24 KiB | Bootloader |
 | Metadata A | `0x00006000–0x00006FFF` | 4 KiB | Bootloader |
@@ -20,20 +21,20 @@
 | App slot | `0x00008000–0x0001EFFF` | 92 KiB | Unified firmware |
 | CCFG/reserved | `0x0001F000–0x0001FFFF` | 4 KiB | Bootloader |
 
-Bootloader 是唯一包含 `ccfg.c` / `.ccfg` 的镜像。应用使用 `boot_app.cmd` 链接，Flash
-起点为 `0x00008000`、长度为 `0x17000`，不得包含 `ccfg.c`。App 可用 SRAM 为
-`0x20000000–0x20004DFF`；`0x20004E00–0x20004EFF` 用于 boot 调试，
-`0x20004F00–0x20004FFF` 用于 boot handoff。
+The bootloader is the only image that contains `ccfg.c` / `.ccfg`. The application is linked with
+`boot_app.cmd`, with Flash starting at `0x00008000` and a length of `0x17000`, and must not include `ccfg.c`.
+The SRAM available to the App is `0x20000000–0x20004DFF`; `0x20004E00–0x20004EFF` is used for boot debugging
+and `0x20004F00–0x20004FFF` for the boot handoff.
 
 ## Persistent metadata
 
-Metadata 是写入 A/B 页的 append-only journal。记录共 48 bytes，最后才编程
-`recordCrc32`；掉电造成的不完整记录因 CRC 无效而被忽略。
+Metadata is an append-only journal written to the A/B pages. Each record is 48 bytes, and `recordCrc32` is
+programmed last; an incomplete record caused by power loss is ignored because its CRC is invalid.
 
 ```c
 typedef struct __attribute__((packed)) {
     uint32_t magic;
-    uint16_t formatVersion;          /* 当前为 2 */
+    uint16_t formatVersion;          /* currently 2 */
     uint16_t recordSize;
     uint32_t sequenceNumber;
     uint32_t state;
@@ -48,30 +49,31 @@ typedef struct __attribute__((packed)) {
 } BootMetadata;
 ```
 
-状态值为：
+The state values are:
 
-| 值 | 状态 | 含义 |
+| Value | State | Meaning |
 | ---: | --- | --- |
-| 1 | `VALID_APPLICATION` | 可在向量表和镜像 CRC 均有效时启动。 |
-| 2 | `UPDATE_REQUESTED` | 应用请求更新；复位后进入 UART 更新器。 |
-| 3 | `UPDATE_IN_PROGRESS` | 更新开始或失败；禁止启动 App。 |
+| 1 | `VALID_APPLICATION` | Bootable when both the vector table and the image CRC are valid. |
+| 2 | `UPDATE_REQUESTED` | The application requested an update; the UART updater is entered after reset. |
+| 3 | `UPDATE_IN_PROGRESS` | An update started or failed; booting the App is forbidden. |
 
-读取时从两页选择最新的 CRC 有效记录。两页均写满时，bootloader 擦除不含最新记录的页，
-再写入新记录，因此另一页始终保留最新有效记录直至新写入完成。
+On read, the newest CRC-valid record across both pages is selected. When both pages are full, the bootloader
+erases the page that does not hold the newest record and then writes the new record, so the other page always
+retains the newest valid record until the new write completes.
 
 ## Boot decision, confirmation and handoff
 
-每次复位后的决策为：
+The decision after every reset is:
 
 ```text
-metadata 不是 VALID_APPLICATION  -> UART update mode
-unconfirmedBootCount >= 3         -> UART update mode
-App 向量表或 image CRC 无效       -> UART update mode
-否则                              -> 记录一次未确认启动并跳入 App
+metadata is not VALID_APPLICATION     -> UART update mode
+unconfirmedBootCount >= 3             -> UART update mode
+App vector table or image CRC invalid -> UART update mode
+otherwise                             -> record an unconfirmed boot and jump to the App
 ```
 
-跳转前 bootloader 增加 `unconfirmedBootCount` 与 `bootAttemptId`，并在
-`0x20004F00` 写入：
+Before jumping, the bootloader increments `unconfirmedBootCount` and `bootAttemptId`, and writes the following
+at `0x20004F00`:
 
 ```c
 typedef struct {
@@ -81,108 +83,113 @@ typedef struct {
 } BootHandoff;
 ```
 
-应用从 handoff 读取角色；只有 `tx` 明确选择 TX，其他值一律回退 RX。应用在 UART/RF
-关键初始化成功后调用 `bl_confirm_boot()`，bootloader API 仅对匹配且尚未确认的
-`bootAttemptId` 追加确认记录，并将未确认计数减一。复位或掉电发生在确认之前会保留该次
-计数；因此故障只会使系统更保守地进入更新模式。
+The application reads its role from the handoff; only `tx` explicitly selects TX, and every other value falls
+back to RX. The application calls `bl_confirm_boot()` after its critical UART/RF initialization succeeds; the
+bootloader API appends a confirmation record only for a matching, not-yet-confirmed `bootAttemptId`, and
+decrements the unconfirmed count by one. A reset or power loss before confirmation keeps that count; failures
+therefore only make the system enter update mode more conservatively.
 
-跳转前 bootloader 验证 MSP 落在 `[0x20000000, 0x20005000)`，ResetISR 为 App slot 内的
-Thumb 地址，并重算镜像 CRC32。随后关闭 SysTick、禁用/清除 NVIC 中断、将 VTOR 指向
-`0x00008000`、恢复 PRIMASK、装载 App MSP 并跳转 ResetISR。恢复 PRIMASK 是必要的：
-否则 bootloader 的关中断状态会泄漏给 TI-RTOS App。
+Before jumping, the bootloader verifies that the MSP lies within `[0x20000000, 0x20005000)`, that the ResetISR
+is a Thumb address inside the App slot, and recomputes the image CRC32. It then stops SysTick, disables and
+clears NVIC interrupts, points VTOR at `0x00008000`, restores PRIMASK, loads the App MSP and jumps to the
+ResetISR. Restoring PRIMASK is necessary: otherwise the bootloader's interrupts-disabled state leaks into the
+TI-RTOS App.
 
 ## Bootloader API
 
-应用只能通过固定 Flash 地址 `0x00005000` 的 ABI 调用 bootloader。当前 ABI 版本为 2；
-两个函数均以 `0` 表示 metadata 已成功持久化，非零表示失败：
+The application may only call the bootloader through the ABI at the fixed Flash address `0x00005000`. The
+current ABI version is 2; both functions return `0` when metadata was successfully persisted and non-zero on
+failure:
 
 ```c
 typedef struct {
     uint32_t magic;                  /* BLAP */
-    uint16_t version;                /* 当前为 2 */
+    uint16_t version;                /* currently 2 */
     uint16_t reserved;
     int (*confirmBoot)(uint32_t bootAttemptId);
     int (*requestUpdate)(void);
 } BootloaderApi;
 ```
 
-`boot_api.c` 先验证 API magic 与版本，再调用上述函数；不匹配或 metadata 写入失败时
-安全返回。CLI 的 `bootloader` 命令只有成功写入 `UPDATE_REQUESTED` 后才复位；失败时保持
-当前应用运行并返回错误。
+`boot_api.c` verifies the API magic and version before calling these functions, and returns safely on a
+mismatch or a metadata write failure. The CLI `bootloader` command resets only after `UPDATE_REQUESTED` was
+written successfully; on failure it keeps the current application running and returns an error.
 
 ## Package format
 
-升级 package 为 32-byte header 加 raw App bytes。header 不写入 App slot，App 向量表
-始终位于 `0x00008000`。
+An update package is a 32-byte header followed by the raw App bytes. The header is not written to the App slot,
+and the App vector table is always at `0x00008000`.
 
 ```c
 typedef struct __attribute__((packed)) {
     uint32_t magic;                  /* FWPK */
     uint16_t formatVersion;          /* 1 */
     uint16_t headerSize;             /* 32 */
-    uint32_t targetId;               /* 必须为 CC1M / 0x4343314D */
-    uint32_t applicationAddress;     /* 必须为 0x00008000 */
-    uint32_t imageSize;              /* 非零、4-byte 对齐且 <= 0x17000 */
+    uint32_t targetId;               /* must be CC1M / 0x4343314D */
+    uint32_t applicationAddress;     /* must be 0x00008000 */
+    uint32_t imageSize;              /* non-zero, 4-byte aligned and <= 0x17000 */
     uint32_t firmwareVersion;
     uint32_t imageCrc32;
-    uint32_t headerCrc32;            /* 前 28 bytes 的 IEEE CRC32 */
+    uint32_t headerCrc32;            /* IEEE CRC32 of the first 28 bytes */
 } FirmwarePackageHeader;
 ```
 
-`BEGIN` 通过 header 后，bootloader 先追加 `UPDATE_IN_PROGRESS`，然后才擦除 App slot。
-`END` 只有在全部数据写入且 App Flash CRC32 与 `imageCrc32` 相符时，才追加
-`VALID_APPLICATION`。任意 header 错误、写入错误、超时、CRC 不符或复位都会使下次启动
-进入 UART 更新模式。
+Once `BEGIN` passes the header check, the bootloader first appends `UPDATE_IN_PROGRESS` and only then erases
+the App slot. `END` appends `VALID_APPLICATION` only after all data has been written and the App Flash CRC32
+matches `imageCrc32`. Any header error, write error, timeout, CRC mismatch or reset causes the next boot to
+enter UART update mode.
 
 ## UART protocol v2
 
-UART 为 115200 8N1、二进制模式。每帧先 COBS 编码并以 `0x00` 终止；解码后格式为：
+The UART runs at 115200 8N1 in binary mode. Each frame is COBS-encoded and terminated with `0x00`; the decoded
+layout is:
 
 ```text
 protocolVersion:u8 | type:u8 | sequence:u16 | payloadLength:u16 |
 payload | frameCrc16:u16
 ```
 
-协议版本为 2；帧 CRC 使用 CRC-16/CCITT-FALSE，package 与镜像使用 IEEE CRC32。
+The protocol version is 2; the frame CRC is CRC-16/CCITT-FALSE, while packages and images use IEEE CRC32.
 
-| 消息 | 方向 | Payload |
+| Message | Direction | Payload |
 | --- | --- | --- |
-| `HELLO` / `INFO` | Host → target / target → host | 空 / target、状态、slot 大小、镜像大小、版本、角色（24 B）。版本以 `0x00MMmmpp` 的 `u32` 传输，主机显示为 `major.minor.patch`。 |
-| `BEGIN` / `READY` | Host → target / target → host | `FwPackageHeader + role:u32` / 起始 offset。 |
-| `DATA` / `ACK` / `NACK` | Host / target | `offset:u32 + 1..128 B`（4-byte 对齐）/ 下一个期望 offset。 |
-| `END` / `COMPLETE` | Host / target | 空 / 空。 |
-| `SET_ROLE` / `COMPLETE` | Host / target | `rx` 或 `tx` 的 role:u32 / 空。 |
-| `ERROR` | target | 空。 |
+| `HELLO` / `INFO` | Host → target / target → host | Empty / target, state, slot size, image size, version, role (24 B). The version is sent as a `u32` in `0x00MMmmpp` form and displayed by the host as `major.minor.patch`. |
+| `BEGIN` / `READY` | Host → target / target → host | `FwPackageHeader + role:u32` / starting offset. |
+| `DATA` / `ACK` / `NACK` | Host / target | `offset:u32 + 1..128 B` (4-byte aligned) / next expected offset. |
+| `END` / `COMPLETE` | Host / target | Empty / empty. |
+| `SET_ROLE` / `COMPLETE` | Host / target | role:u32 of `rx` or `tx` / empty. |
+| `ERROR` | target | Empty. |
 
-传输采用 stop-and-wait。对已成功写入数据的精确重复 `DATA`，bootloader 返回当前 `ACK`；
-未来 offset 返回 `NACK`。不支持跨复位续传：中断后需重新 `BEGIN` 并完整发送镜像。
+Transfer is stop-and-wait. For an exact duplicate `DATA` whose data was already written successfully, the
+bootloader returns the current `ACK`; a future offset gets a `NACK`. Resuming across a reset is not supported:
+after an interruption, send `BEGIN` again and transfer the whole image.
 
-`SET_ROLE` 只对当前有效 App 生效，不重写镜像；它追加 metadata、更新角色并复位。Host
-工具用 `fw_update.py set-role --role rx|tx` 调用它。
+`SET_ROLE` only applies to the currently valid App and does not rewrite the image; it appends metadata, updates
+the role and resets. The host tool invokes it with `fw_update.py set-role --role rx|tx`.
 
 ## Build, deployment and update
 
-构建统一应用：
+Build the unified application:
 
 ```sh
 ./firmware/build.sh
 python3 tools/fw_package.py --verify firmware/boot_build/nonrom_test/firmware.pkg
 ```
 
-通过 UART 更新并同时指定启动角色：
+Update over UART and choose the boot role at the same time:
 
 ```sh
 python3 tools/fw_update.py --port /dev/cu.usbserial-XXXX flash \
   --package firmware/boot_build/nonrom_test/firmware.pkg --role rx
 ```
 
-切换已安装有效镜像的角色：
+Switch the role of an installed, valid image:
 
 ```sh
 python3 tools/fw_update.py --port /dev/cu.usbserial-XXXX set-role --role tx
 ```
 
-首次部署或恢复使用 J-Link 全量烧录：
+For first deployment or recovery, use a full J-Link flash:
 
 ```sh
 ./bootloader/build.sh
@@ -190,14 +197,14 @@ python3 tools/fw_update.py --port /dev/cu.usbserial-XXXX set-role --role tx
 ./firmware/flash_all_jlink.sh -r rx
 ```
 
-全量烧录会全片擦除，然后烧录 bootloader、`0x8000` 应用 HEX 和有效 metadata。不能只烧录
-应用 HEX：没有有效 metadata 时 bootloader 不会启动它。现场升级应使用 `firmware.pkg` 的
-UART 流程，避免 J-Link 全擦除。
+A full flash performs a chip erase and then flashes the bootloader, the `0x8000` application HEX and valid
+metadata. Flashing only the application HEX is not enough: without valid metadata the bootloader will not boot
+it. Field upgrades should use the `firmware.pkg` UART flow and avoid a J-Link full erase.
 
 ## Validation priorities
 
-1. 正常 RX 与 TX 启动、`bl_confirm_boot()` 和连续重启确认。
-2. `bootloader` CLI 请求、完整 UART 更新、`set-role` 与 metadata 角色持久化。
-3. 错误 target/header/image CRC、越界或非对齐数据、重复 DATA 与丢失 ACK。
-4. metadata 写入、App 擦除、数据编程和最终 VALID 提交各阶段的断电恢复。
-5. J-Link 全量恢复后 metadata、角色、向量表与应用 CRC 的一致性。
+1. Normal RX and TX boot, `bl_confirm_boot()` and confirmation across consecutive reboots.
+2. The `bootloader` CLI request, a full UART update, `set-role` and metadata role persistence.
+3. Wrong target/header/image CRC, out-of-range or unaligned data, duplicate DATA and lost ACK.
+4. Power-loss recovery at each stage: metadata write, App erase, data programming and the final VALID commit.
+5. Consistency of metadata, role, vector table and application CRC after a full J-Link recovery.

@@ -1,38 +1,38 @@
-# 串口 CLI
+# Serial CLI
 
-固件通过 `Board_UART0` 提供 ASCII 串口 CLI，参数为 **115200 8N1**。每行一个命令，接受 `CR`、`LF` 或 `CRLF` 结尾；每个响应以 `OK` 或 `ERR <code>` 开头。输入 `help` 可查看目标当前角色实际支持的命令。
+The firmware provides an ASCII serial CLI on `Board_UART0` at **115200 8N1**. One command per line, terminated with `CR`, `LF` or `CRLF`; every response starts with `OK` or `ERR <code>`. Type `help` to see the commands actually supported by the target's current role.
 
-启动时会输出固件版本和角色，例如：
+At boot it prints the firmware version and role, for example:
 
 ```text
 OK version=0.2.1 role=rx
 OK cli=ready count=0 commands=help,rx,bootloader,version,ipc,stack
 ```
 
-角色由 bootloader 写入的启动 metadata 决定；只有明确写入 `tx` 才运行 TX，其余值均安全地按 RX 运行。烧录时用 `flash_all_jlink.sh -r rx` 或 `-r tx` 选择角色，运行中的 CLI 不提供切换角色的命令。
+The role is decided by the boot metadata written by the bootloader; only an explicit `tx` runs TX, and any other value safely runs as RX. Choose the role when flashing with `flash_all_jlink.sh -r rx` or `-r tx`; the running CLI has no command to switch roles.
 
-## 通用命令
+## Common commands
 
-| 命令 | 说明 |
+| Command | Description |
 | --- | --- |
-| `help [command]` | 列出所有命令，或显示某一命令的用法。 |
-| `version` | 输出编译时的固件版本。 |
-| `bootloader` | metadata 成功持久化后输出 `OK rebooting_to_bootloader`，复位并进入 UART OTA 更新器；写入失败时输出 `ERR BOOT metadata_write_failed` 并保持当前应用运行。 |
-| `ipc dump on\|off` | 控制 I2C slave 事务的串口打印；默认 `off`。 |
-| `stack` | 列出 SYS/BIOS Task 的栈高水位。 |
+| `help [command]` | List all commands, or show the usage of one command. |
+| `version` | Print the firmware version compiled in. |
+| `bootloader` | After the metadata is persisted successfully, prints `OK rebooting_to_bootloader`, resets and enters the UART OTA updater; if the write fails, prints `ERR BOOT metadata_write_failed` and keeps the current application running. |
+| `ipc dump on\|off` | Controls serial printing of I2C slave transactions; default `off`. |
+| `stack` | Lists the stack high-water marks of the SYS/BIOS Tasks. |
 
-`ipc dump on` 后，每次 I2C master 写入或读取完成并发送 STOP 时输出事务方向、寄存器指针和数据，例如：
+After `ipc dump on`, each time an I2C master write or read completes and sends STOP, the transaction direction, register pointer and data are printed, for example:
 
 ```text
 OK ipc write reg=0x10 len=3 data=010203
 OK ipc read reg=0x00 len=4 data=49324353
 ```
 
-`write` 是 slave 从 master 接收的 payload；`read` 是 slave 实际通过 `I2CSlaveDataPut()` 发给 master 的字节。读取数据在 I2C ISR 内按发送顺序捕获，STOP 后再交给 I2C worker task 格式化并输出，因此 UART 输出不会在 ISR 中执行；read dump 不会递增 I2C 错误计数。`ipc dump off` 不影响 I2C 通信或统计。
+`write` is the payload the slave received from the master; `read` is the bytes the slave actually sent to the master through `I2CSlaveDataPut()`. Read data is captured in transmit order inside the I2C ISR and, after STOP, handed to the I2C worker task for formatting and output, so UART output never runs in the ISR; a read dump does not increment the I2C error counter. `ipc dump off` does not affect I2C communication or statistics.
 
-单笔 write payload 和可记录的 read 数据均最多为 64 字节。dump 的 worker 队列深度为 1；连续事务快于 worker/UART 消费速度时，后续待处理记录会丢弃并计入 I2C 错误计数。因此用于逐笔核对的主机测试应串行执行，等待对应的 `OK ipc ...` 输出后再发下一笔。
+A single write payload and the recordable read data are each limited to 64 bytes. The dump worker queue depth is 1; when consecutive transactions arrive faster than the worker/UART can consume them, subsequent pending records are dropped and counted in the I2C error counter. Host tests that check transactions one by one should therefore run serially, waiting for the corresponding `OK ipc ...` output before sending the next one.
 
-`stack` 的输出格式如下：
+The output format of `stack` is:
 
 ```text
 OK stack: name priority used/size free mode
@@ -41,44 +41,44 @@ OK stack: radio_rx 2 736/1024 288 blocked
 OK stack: cli 1 1184/2048 864 running
 ```
 
-字段依次为任务名、优先级、历史最大已用栈/总栈、未触及栈空间及状态。任务名可为 `radio_rx`、`radio_tx`、`cli`、`i2c_slave`、`packet_print`、`idle` 或 `unnamed`；状态为 `running`、`ready`、`blocked`、`terminated`、`inactive` 或 `unknown`。`used` 是 SYS/BIOS 填充栈扫描得到的高水位，应在覆盖最坏业务路径后再据此调整栈大小。
+The fields are, in order, task name, priority, historical maximum used stack/total stack, untouched stack space and state. The task name can be `radio_rx`, `radio_tx`, `cli`, `i2c_slave`, `packet_print`, `idle` or `unnamed`; the state is `running`, `ready`, `blocked`, `terminated`, `inactive` or `unknown`. `used` is the high-water mark from the SYS/BIOS stack-fill scan; only resize stacks based on it after exercising the worst-case functional paths.
 
-## RX 命令
+## RX commands
 
-只有 metadata 角色为 `rx` 时提供：
+Available only when the metadata role is `rx`:
 
-| 命令 | 说明 |
+| Command | Description |
 | --- | --- |
-| `rx status` | 输出接收、入队、丢包、RF 缓冲满、CRC 错误、碰撞和 RSSI 统计。 |
-| `rx dump on` | 打开逐包输出。 |
-| `rx dump off` | 关闭逐包输出；接收和统计仍继续。 |
+| `rx status` | Prints receive, enqueue, drop, RF buffer full, CRC error, collision and RSSI statistics. |
+| `rx dump on` | Enables per-packet output. |
+| `rx dump off` | Disables per-packet output; reception and statistics continue. |
 
-打开 dump 后，每个入队包会输出：
+With dump on, every enqueued packet prints:
 
 ```text
 RX seq=42 tick=123456 len=30 data=...
 ```
 
-`rx status` 中 `rx` 为无线侧收到的包数，`enq` 为成功放入应用 mailbox 的数量，`drop` 为应用 mailbox 满造成的丢弃，`full` 为 RF 接收缓冲满，`crc` 和 `coll` 分别为 CRC 错误与碰撞计数；`rssi=last[min,max]` 以 dBm 表示，`samples` 为有效 RSSI 样本数。
+In `rx status`, `rx` is the number of packets received on the radio side, `enq` the number successfully placed into the application mailbox, `drop` the drops caused by a full application mailbox, `full` the RF receive buffer full count, and `crc` and `coll` the CRC error and collision counts respectively; `rssi=last[min,max]` is in dBm and `samples` is the number of valid RSSI samples.
 
-## TX 命令
+## TX commands
 
-只有 metadata 角色为 `tx` 时提供：
+Available only when the metadata role is `tx`:
 
-| 命令 | 说明 |
+| Command | Description |
 | --- | --- |
-| `tx sync_time <utc_hex>` | 发送同步时间包；参数是至多 16 个十六进制字符的 `uint64`。 |
-| `tx sync_frame <exposure_hex>` | 发送帧同步包；参数是至多 8 个十六进制字符的 `uint32`。 |
+| `tx sync_time <utc_hex>` | Sends a sync-time packet; the argument is a `uint64` of up to 16 hexadecimal characters. |
+| `tx sync_frame <exposure_hex>` | Sends a frame-sync packet; the argument is a `uint32` of up to 8 hexadecimal characters. |
 
-参数可带 `0x` 前缀。例如：
+Arguments may carry a `0x` prefix. For example:
 
 ```text
 tx sync_time 0x0000000067D2A100
 tx sync_frame 0x00001234
 ```
 
-成功响应包含递增序号，例如 `OK sync_time seq=7`；无线侧命令失败时返回 `ERR RF`。
+A successful response includes an incrementing sequence number, e.g. `OK sync_time seq=7`; if the radio command fails, `ERR RF` is returned.
 
-## 移植说明
+## Porting notes
 
-`cli_core.c`、`cli_core.h` 和 `cli_port.h` 不依赖 TI SDK。新目标只需实现 `cli_port_write()`，并将完整输入行交给 `cli_process_line()`。本项目的 `cli_task_cc1310.c` 是 CC1310 UART0 与 TI-RTOS pthread 适配层。
+`cli_core.c`, `cli_core.h` and `cli_port.h` do not depend on the TI SDK. A new target only needs to implement `cli_port_write()` and pass complete input lines to `cli_process_line()`. In this project, `cli_task_cc1310.c` is the adaptation layer for the CC1310 UART0 and TI-RTOS pthread.

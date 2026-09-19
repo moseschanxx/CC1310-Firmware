@@ -1,57 +1,57 @@
 # CC1310 Combined Firmware
 
-这是 CC1310F128 的统一应用镜像：同一份程序根据 bootloader metadata 在启动时进入 RX 或 TX 角色。它不是 TI 示例工程中的独立 Packet RX 镜像。
+This is the unified application image for the CC1310F128: the same program enters the RX or TX role at boot according to the bootloader metadata. It is not the standalone Packet RX image from the TI example projects.
 
-应用由驻留 bootloader 启动，链接地址为 `0x00008000`，使用 custom、non-ROM SYS/BIOS 库。bootloader 保留 `0x00000000–0x00007FFF`、metadata 页和 CCFG；应用不应直接覆盖这些区域。
+The application is launched by the resident bootloader, linked at `0x00008000`, and uses a custom, non-ROM SYS/BIOS library. The bootloader reserves `0x00000000–0x00007FFF`, the metadata pages and the CCFG; the application must not overwrite those regions directly.
 
-## 功能与配置
+## Features and configuration
 
-- RX：连续 proprietary RF 接收；使用 32 深度应用 mailbox 保存数据，支持统计和可选逐包串口输出。
-- TX：通过 CLI 发送 30-byte 同步时间包或帧同步包。
-- 启动角色：metadata 为 `tx` 时运行 TX，其他情况默认 RX。
-- RF 设置在 `smartrf_settings/smartrf_settings.c`：当前为 **433.000 MHz、50 kBaud、2-GFSK、-10 dBm**。修改频率、功率或调制参数前须评估硬件能力和当地无线法规。
-- UART CLI：`Board_UART0`，115200 8N1；具体命令参见 [`cli.md`](cli.md)。
-- I2C slave：I2C0、7-bit 地址 `0x2A`，SCL/DIO16、SDA/DIO17。两个引脚均为内部上拉、开漏和 2 mA 驱动配置；没有外部上拉时只适合短、低电容总线。该接口由 driverlib 和 SYS/BIOS Hwi 直接管理，不能与 TI master-only `I2C` driver 共用；完整协议见 [`i2c_slave.md`](i2c_slave.md)。
-- DIO1 默认在 TX 执行和 RX 处理期间输出时序脉冲，供延迟测量使用。
+- RX: continuous proprietary RF reception; data is stored in a 32-deep application mailbox, with statistics and optional per-packet serial output.
+- TX: sends 30-byte sync-time or frame-sync packets from the CLI.
+- Boot role: runs TX when the metadata says `tx`, otherwise defaults to RX.
+- RF settings live in `smartrf_settings/smartrf_settings.c`: currently **433.000 MHz, 50 kBaud, 2-GFSK, -10 dBm**. Assess the hardware capability and local radio regulations before changing the frequency, power or modulation parameters.
+- UART CLI: `Board_UART0`, 115200 8N1; see [`cli.md`](cli.md) for the commands.
+- I2C slave: I2C0, 7-bit address `0x2A`, SCL/DIO16, SDA/DIO17. Both pins are configured with internal pull-ups, open-drain and 2 mA drive; without external pull-ups it is only suitable for short, low-capacitance buses. The interface is managed directly by driverlib and a SYS/BIOS Hwi and cannot be shared with the TI master-only `I2C` driver; see [`i2c_slave.md`](i2c_slave.md) for the full protocol.
+- DIO1 outputs timing pulses by default during TX execution and RX handling, for latency measurement.
 
-## 构建
+## Build
 
-构建依赖 TI ARM CGT、SimpleLink CC13x0 SDK 4.20.02.07、XDCtools/TI-RTOS。脚本默认使用项目内的 `toolchains/ti-cgt-arm_18.12.5.LTS`；SDK 默认路径为 `/Applications/ti/simplelink_cc13x0_sdk_4_20_02_07`，可通过 `SIMPLELINK_SDK` 覆盖。也可通过 `TI_ARM_CGT` 覆盖编译器目录。
+The build depends on TI ARM CGT, SimpleLink CC13x0 SDK 4.20.02.07 and XDCtools/TI-RTOS. The script uses the in-repo `toolchains/ti-cgt-arm_18.12.5.LTS` by default; the default SDK path is `/Applications/ti/simplelink_cc13x0_sdk_4_20_02_07`, overridable with `SIMPLELINK_SDK`. The compiler directory can also be overridden with `TI_ARM_CGT`.
 
-在 `firmware/` 中执行：
+Run in `firmware/`:
 
 ```sh
 ./build.sh
 ```
 
-`firmware_build.h` 中的 `FIRMWARE_VERSION` 是 CLI 与 OTA package 的唯一发布版本源。构建脚本将 `major.minor.patch` 编码为 32-bit 的 `0x00MMmmpp`：最高字节保留为 0，`major`、`minor`、`patch` 各占一个字节（范围均为 0–255），并写入 OTA package header。主机校验和设备 `info` 均显示为 `major.minor.patch`；每次发布应递增该语义版本。成功后生成：
+`FIRMWARE_VERSION` in `firmware_build.h` is the single source of the release version for the CLI and the OTA package. The build script encodes `major.minor.patch` as the 32-bit value `0x00MMmmpp`: the top byte is reserved as 0, and `major`, `minor` and `patch` each take one byte (each in the range 0–255); this is written into the OTA package header. Host verification and the device `info` both display it as `major.minor.patch`; increment this semantic version for every release. On success it produces:
 
-| 文件 | 用途 |
+| File | Purpose |
 | --- | --- |
-| `boot_build/nonrom_test/firmware.out` | 链接后的应用 ELF/OUT。 |
-| `boot_build/nonrom_test/firmware.hex` | 地址从 `0x00008000` 开始的 Intel HEX。 |
-| `boot_build/nonrom_test/firmware.pkg` | UART OTA 包，target ID 为 `0x4343314D`（`CC1M`）。 |
+| `boot_build/nonrom_test/firmware.out` | Linked application ELF/OUT. |
+| `boot_build/nonrom_test/firmware.hex` | Intel HEX starting at address `0x00008000`. |
+| `boot_build/nonrom_test/firmware.pkg` | UART OTA package with target ID `0x4343314D` (`CC1M`). |
 
-脚本会校验生成的 OTA 包。也可单独校验：
+The script verifies the generated OTA package. It can also be verified separately:
 
 ```sh
 python3 ../tools/fw_package.py --verify boot_build/nonrom_test/firmware.pkg
 ```
 
-## 运行模型
+## Runtime model
 
-主 radio Task 的优先级为 2；CLI、RX 的 `packet_print` 和 I2C 的 `i2c_slave` worker 均为优先级 1。CLI 栈为 2048 字节，I2C worker 栈为 1024 字节。RX 角色创建 radio、CLI 和 packet-print Task；TX 角色创建 radio 和 CLI Task；无论角色都会启动 I2C worker。I2C Hwi 只负责字节收发和记录入队，`ipc dump` 的 UART 输出由 worker 完成。`stack` CLI 命令可查看每个 Task 的栈高水位，作为缩减 SRAM 前的实测依据。
+The main radio Task has priority 2; the CLI, the RX `packet_print` and the I2C `i2c_slave` worker all have priority 1. The CLI stack is 2048 bytes and the I2C worker stack is 1024 bytes. The RX role creates the radio, CLI and packet-print Tasks; the TX role creates the radio and CLI Tasks; the I2C worker starts regardless of role. The I2C Hwi only handles byte transfer and record enqueueing, and the UART output for `ipc dump` is done by the worker. The `stack` CLI command shows each Task's stack high-water mark as measured evidence before shrinking SRAM.
 
-启动代码会先屏蔽 bootloader 遗留的外部中断，再完成应用的向量和驱动初始化，避免旧的外设中断在新处理函数安装前触发。应用仅在 RF 初始化完成且 UART CLI 已打开、命令表已安装后调用 `bl_confirm_boot()`。若需要 OTA 更新，使用 CLI 的 `bootloader` 命令请求复位到 bootloader；烧录和恢复流程见 [`build_flash.md`](build_flash.md)。
+The startup code first masks external interrupts left over from the bootloader, then completes the application's vector and driver initialization, so that stale peripheral interrupts cannot fire before the new handlers are installed. The application calls `bl_confirm_boot()` only after RF initialization has completed, the UART CLI is open and the command table is installed. To perform an OTA update, use the CLI `bootloader` command to request a reset into the bootloader; see [`build_flash.md`](build_flash.md) for the flashing and recovery flow.
 
-## 目录
+## Layout
 
-| 路径 | 内容 |
+| Path | Contents |
 | --- | --- |
-| `firmware.c` | RX radio Task。 |
-| `firmware_tx.c` | TX radio Task 与 TX CLI。 |
-| `rf_packet_queue.c` | RX mailbox、统计和逐包输出。 |
-| `cli_*.c` | 串口 CLI、角色命令和 bootloader 命令。 |
-| `boot_app.cmd` | bootloader 应用的 Flash/SRAM 布局。 |
-| `boot_build/boot_release.cfg` | non-ROM SYS/BIOS 配置。 |
-| `smartrf_settings/` | SmartRF 导出的无线参数。 |
+| `firmware.c` | RX radio Task. |
+| `firmware_tx.c` | TX radio Task and TX CLI. |
+| `rf_packet_queue.c` | RX mailbox, statistics and per-packet output. |
+| `cli_*.c` | Serial CLI, role commands and bootloader command. |
+| `boot_app.cmd` | Flash/SRAM layout for the bootloader application. |
+| `boot_build/boot_release.cfg` | Non-ROM SYS/BIOS configuration. |
+| `smartrf_settings/` | Radio parameters exported from SmartRF. |

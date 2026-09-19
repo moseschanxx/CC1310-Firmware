@@ -1,96 +1,100 @@
-# RX Bootloader / App 升级联调问题分析报告
+# RX Bootloader / App Update Bring-up Issue Analysis Report
 
-## 1. 目标与范围
+## 1. Goal and scope
 
-本次工作为 CC1310 RX 固件实现并验证串口升级链路：bootloader 加载位于
-`0x8000` 的 app；app 通过 CLI `bootloader` 命令请求更新；Python 客户端发送带
-CRC32 包头的升级包。Bootloader 维护双页元数据和未确认启动计数，app 在 RF
-初始化成功后确认本次启动。TX 工程不在本次修改范围内。
+This work implemented and verified the serial update chain for the CC1310 RX firmware: the bootloader loads the
+app located at `0x8000`; the app requests an update via the CLI `bootloader` command; a Python client sends an
+update package with a CRC32 header. The bootloader maintains dual-page metadata and an unconfirmed boot counter,
+and the app confirms the boot once RF initialization succeeds. The TX project is outside the scope of this change.
 
-## 2. 最终结果
+## 2. Final result
 
-RX 设备当前运行 app v108（51,224 bytes，CRC32 `27C75B4A`）。以下真实硬件
-链路已验证：
+The RX device currently runs app v108 (51,224 bytes, CRC32 `27C75B4A`). The following chain has been verified
+on real hardware:
 
-1. app 串口 `help` 正确返回命令列表；
-2. app 输入 `bootloader` 返回 `OK rebooting_to_bootloader`；
-3. bootloader 的 `HELLO/INFO` 返回 `state=2`（显式请求更新）；
-4. `tools/fw_update.py` 通过 `/dev/cu.usbserial-A50285BI` 完整写入并校验 v108，
-   返回 `COMPLETE`；
-5. bootloader 自动启动更新后的 app，CLI 再次正常响应。
+1. The app's serial `help` returns the command list correctly;
+2. Entering `bootloader` on the app returns `OK rebooting_to_bootloader`;
+3. The bootloader's `HELLO/INFO` returns `state=2` (explicit update request);
+4. `tools/fw_update.py` fully writes and verifies v108 over `/dev/cu.usbserial-A50285BI`,
+   returning `COMPLETE`;
+5. The bootloader automatically boots the updated app, and the CLI responds normally again.
 
-## 3. 关键问题与定位过程
+## 3. Key issues and how they were located
 
-### 3.1 直接跳转没有恢复中断状态
+### 3.1 The direct jump did not restore the interrupt state
 
-Bootloader 初期能跳转到 app，但应用继承了 bootloader 设置的 `PRIMASK=1`。
-这会阻止应用的中断和 RTOS 调度正常工作。修复是在 app 跳转前完成向量表切换、
-清除 NVIC pending 位后执行 `CPUcpsie()`，使 handoff 等价于复位后进入 app。
+Early on the bootloader could jump to the app, but the application inherited the `PRIMASK=1` set by the
+bootloader. That prevents the application's interrupts and RTOS scheduling from working. The fix is to switch
+the vector table, clear the NVIC pending bits and then execute `CPUcpsie()` before jumping to the app, so the
+handoff is equivalent to entering the app after a reset.
 
-### 3.2 ROM SYS/BIOS 不支持 app 重定位到 0x8000
+### 3.2 ROM SYS/BIOS does not support relocating the app to 0x8000
 
-原 app 使用 ROM SYS/BIOS。其部分启动与运行时入口隐含假设镜像位于 flash
-零地址，重定位后出现 HardFault 和异常的 ROM 调用路径。因此为 boot app 生成
-了非 ROM 的自定义 SYS/BIOS 库，并使用独立 app linker command file：
+The original app used ROM SYS/BIOS. Some of its startup and runtime entry points implicitly assume the image
+lives at flash address zero; after relocation this caused HardFaults and abnormal ROM call paths. A non-ROM
+custom SYS/BIOS library was therefore generated for the boot app, together with a separate app linker command
+file:
 
-| 区域 | 地址/大小 | 用途 |
+| Region | Address/size | Purpose |
 | --- | --- | --- |
-| bootloader | `0x0000–0x5FFF` | 启动、元数据、升级协议 |
-| 元数据页 | `0x6000`、`0x7000` | A/B 追加记录 |
-| app slot | `0x8000–0x1EFFF` | 可升级 app |
-| SRAM_APP | `0x20000000–0x20004DFF` | app 数据、heap、stack |
+| bootloader | `0x0000–0x5FFF` | Boot, metadata, update protocol |
+| metadata pages | `0x6000`, `0x7000` | A/B append records |
+| app slot | `0x8000–0x1EFFF` | Updatable app |
+| SRAM_APP | `0x20000000–0x20004DFF` | App data, heap, stack |
 
-生成的向量表 reset entry 被替换为清晰的 `ResetISR()` wrapper，然后调用 TI
-运行时 `_c_int00()`；此方式避免依赖零地址向量表。
+The generated vector table's reset entry was replaced with a clear `ResetISR()` wrapper that then calls the TI
+runtime `_c_int00()`; this avoids depending on a vector table at address zero.
 
-### 3.3 `pthread_create()` HardFault 的根因
+### 3.3 Root cause of the `pthread_create()` HardFault
 
-症状是 app 在 `pthread_create()` 内触发 HardFault：
+The symptom was a HardFault inside `pthread_create()` in the app:
 
-- 启动标记已通过 `Board_initGeneral()`、队列初始化和 pthread 属性设置；
-- CFSR 为 `0x00008600`，BFAR 为 `0x3EF0E49D`；
-- 正确解析异常栈帧后，PC 为 `0x856A`，即 `IHeap_alloc()` 读取 heap 对象函数表；
-- RAM `0x20002F00` 本应保存 `0x00013C20`，实际却是一段随机数据。
+- Boot markers had passed `Board_initGeneral()`, queue initialization and pthread attribute setup;
+- CFSR was `0x00008600` and BFAR was `0x3EF0E49D`;
+- After correctly decoding the exception stack frame, PC was `0x856A`, i.e. `IHeap_alloc()` reading the heap
+  object's function table;
+- RAM `0x20002F00` should have held `0x00013C20` but actually contained random data.
 
-最初误以为是 pthread stack 或 Mailbox 参数问题。进一步检查 map 和 Intel HEX
-发现 `.cinit` 长度为零，而 `.data` 被 `armhex` 输出为 RAM 地址记录。包工具只
-抽取 `0x8000–0x1EFFF`，这些 RAM 记录不会进入升级包，造成 app 的全局初始化
-数据没有从 flash 复制到 RAM。
+It was first mistaken for a pthread stack or Mailbox parameter problem. Further inspection of the map and Intel
+HEX showed that `.cinit` had zero length while `.data` was emitted by `armhex` as RAM-address records. The
+package tool only extracts `0x8000–0x1EFFF`, so those RAM records never enter the update package, and the
+app's global initialization data was never copied from flash to RAM.
 
-根因是自定义链接命令缺少**链接器级** `--rom_model`。该选项必须位于 `-z`
-之后；放在前面会被当作编译器选项并被忽略。修复后 map 显示：
+The root cause was that the custom linker command lacked the **linker-level** `--rom_model`. That option must
+come after `-z`; placed before it, it is treated as a compiler option and ignored. After the fix the map shows:
 
 ```text
 .cinit  0x00014260  length 0x280
 .data   0x20002C18  UNINITIALIZED
 ```
 
-此时 `.cinit` 已包含 `.data` 的压缩加载映像和 `.bss` 清零记录，`_c_int00()`
-可在 app 启动时正确完成 C 运行时初始化。
+`.cinit` now contains the compressed load image of `.data` and the `.bss` zero-fill record, so `_c_int00()`
+can complete C runtime initialization correctly at app startup.
 
-### 3.4 UART 无响应
+### 3.4 No UART response
 
-修复数据初始化后 app 已达到 `BIOS_start()`，未再发生 HardFault，但 CLI 无回应。
-排查发现调试期间曾临时跳过 `PIN_init()` 和 `Board_initHook()`。恢复这两个标准
-板级初始化步骤后，UART 引脚和外设状态恢复，CLI 正常工作。
+After fixing data initialization the app reached `BIOS_start()` with no further HardFault, but the CLI did not
+respond. Investigation showed that `PIN_init()` and `Board_initHook()` had been temporarily skipped during
+debugging. Restoring these two standard board initialization steps brought the UART pins and peripheral state
+back, and the CLI worked normally.
 
-## 4. 实现与恢复策略
+## 4. Implementation and recovery strategy
 
-Bootloader 位于 `bootloader/bootloader.c`，采用尽量少的状态：
+The bootloader lives in `bootloader/bootloader.c` and keeps as little state as possible:
 
-- 包头含 magic、格式版本、目标 ID、app 地址、长度、版本、image CRC32 和
-  header CRC32；CC1310 无 SHA-256/Ed25519 需求，本项目以 CRC32 做完整性校验。
-- 接收前先写入 `UPDATE_IN_PROGRESS` 元数据；擦写或掉电失败时，下次启动继续
-  更新模式，而不启动不完整 app。
-- 完成时校验 flash 中 app CRC32，再写入 `VALID_APPLICATION` 元数据。
-- 每次启动 app 前 `unconfirmedBootCount + 1`；app 的
-  `bl_confirm_boot()` 仅在 RF 初始化成功后递减。达到失败阈值或 app 无效时，
-  bootloader 拒绝启动 app 并进入升级模式。
-- app 通过固定地址的 bootloader API 调用 `confirmBoot()` 与 `requestUpdate()`。
+- The package header contains magic, format version, target ID, app address, length, version, image CRC32 and
+  header CRC32; the CC1310 has no SHA-256/Ed25519 requirement, so this project uses CRC32 for integrity checks.
+- `UPDATE_IN_PROGRESS` metadata is written before receiving; if an erase/program fails or power is lost, the
+  next boot continues in update mode instead of starting an incomplete app.
+- On completion the app CRC32 in flash is verified before `VALID_APPLICATION` metadata is written.
+- `unconfirmedBootCount` is incremented before every app boot; the app's
+  `bl_confirm_boot()` decrements it only after RF initialization succeeds. When the failure threshold is
+  reached or the app is invalid, the bootloader refuses to boot the app and enters update mode.
+- The app calls `confirmBoot()` and `requestUpdate()` through the bootloader API at a fixed address.
 
-## 5. 验证方法与产物
+## 5. Verification method and artifacts
 
-构建命令：
+Build commands:
 
 ```bash
 bash rfPacketRx/build_boot_nonrom_test.sh 108
@@ -98,23 +102,24 @@ python3 tools/fw_package.py --verify \
   rfPacketRx/boot_build/nonrom_test/rfPacketRx_boot_nonrom.pkg
 ```
 
-升级命令：
+Update command:
 
 ```bash
 python3 tools/fw_update.py --port /dev/cu.usbserial-A50285BI flash \
   --package rfPacketRx/boot_build/nonrom_test/rfPacketRx_boot_nonrom.pkg
 ```
 
-最终包为 `rfPacketRx/boot_build/nonrom_test/rfPacketRx_boot_nonrom.pkg`。
-烧录 bootloader 时必须注意：J-Link 脚本会整片擦除，因而也会抹掉 `0x6000/0x7000`
-元数据。raw J-Link 烧录 app 不会创建合法元数据；烧录 bootloader 后必须通过
-Python 升级流程写入 app 包。
+The final package is `rfPacketRx/boot_build/nonrom_test/rfPacketRx_boot_nonrom.pkg`.
+When flashing the bootloader, note that the J-Link script performs a full chip erase and therefore also wipes
+the `0x6000/0x7000` metadata. Raw J-Link flashing of the app does not create valid metadata; after flashing the
+bootloader, the app package must be written through the Python update flow.
 
-## 6. 后续建议
+## 6. Follow-up recommendations
 
-- 将 `build_boot_nonrom_test.sh` 由试验性名称整理为正式 boot app 构建入口，并将
-  自定义 SYS/BIOS 生成步骤脚本化，避免依赖已有 `configPkg_nonrom5` 目录。
-- 对升级协议增加自动化串口回归：非法包头、错误 CRC、中断传输、断电恢复、失败
-  阈值和 app 确认计数。
-- 将 HardFault 的 CFSR/BFAR 和自动堆栈帧采集固化为可选诊断功能，避免仅依赖
-  J-Link 人工读取。
+- Promote `build_boot_nonrom_test.sh` from its experimental name to the official boot app build entry point,
+  and script the custom SYS/BIOS generation step so it no longer depends on an existing `configPkg_nonrom5`
+  directory.
+- Add automated serial regression for the update protocol: invalid headers, wrong CRC, interrupted transfers,
+  power-loss recovery, failure threshold and app confirmation counting.
+- Turn HardFault CFSR/BFAR and automatic stack-frame capture into an optional diagnostic feature instead of
+  relying solely on manual J-Link reads.

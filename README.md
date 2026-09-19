@@ -1,42 +1,42 @@
 # CC1310 Unified RX/TX Firmware
 
-面向 TI CC1310F128 的统一无线固件、驻留 UART bootloader 与配套主机工具。一个应用镜像可由 bootloader metadata 在启动时选择运行 RX 或 TX 角色，支持 J-Link 工厂烧录、UART OTA 更新和角色切换。
+Unified wireless firmware for the TI CC1310F128, a resident UART bootloader, and matching host tools. A single application image runs as either RX or TX, selected at boot from bootloader metadata; it supports J-Link factory flashing, UART OTA updates and role switching.
 
-> 本项目面向 CC1310F128；Flash、CCFG、射频参数和引脚配置均与硬件相关。烧录或修改无线参数前，请确认目标硬件和当地无线法规。
+> This project targets the CC1310F128; the Flash layout, CCFG, RF parameters and pin configuration are all hardware specific. Confirm the target hardware and local radio regulations before flashing or changing any wireless parameter.
 
-## 主要功能
+## Key features
 
-- **统一应用镜像**：应用链接到 `0x00008000`，由 metadata 选择 RX 或 TX；未明确为 TX 时安全回退 RX。
-- **RX/TX 无线功能**：RX 连续接收 proprietary RF 数据并维护队列/统计；TX 可经 UART CLI 发送同步时间包或帧同步包。
-- **驻留 bootloader**：位于 Flash `0x00000000–0x00007FFF`，负责应用校验、启动角色、确认启动与 UART 更新。
-- **掉电安全 metadata**：metadata 使用双页 append-only journal；更新或启动异常时，设备保守地停留在 UART 更新模式。
-- **UART OTA**：使用 CRC32 校验的 `.pkg` 升级包；主机端支持查询、刷写和切换 RX/TX 角色。
-- **J-Link 恢复/量产烧录**：一次性写入 bootloader、应用、CCFG 和有效 metadata。
-- **串口 CLI 与测量接口**：默认 UART 为 `115200 8N1`，DIO1 可输出 TX/RX 时序脉冲以支持延迟测量。
+- **Unified application image**: the application links at `0x00008000` and metadata selects RX or TX; anything not explicitly TX falls back safely to RX.
+- **RX/TX radio**: RX continuously receives proprietary RF data and maintains a queue and statistics; TX can send sync-time or frame-sync packets from the UART CLI.
+- **Resident bootloader**: lives in Flash `0x00000000–0x00007FFF` and handles application validation, boot role, boot confirmation and UART updates.
+- **Power-loss-safe metadata**: metadata is a dual-page append-only journal; on an interrupted update or abnormal boot the device conservatively stays in UART update mode.
+- **UART OTA**: CRC32-protected `.pkg` update packages; the host tool supports querying, flashing and switching between the RX/TX roles.
+- **J-Link recovery / production flashing**: writes the bootloader, application, CCFG and valid metadata in one pass.
+- **Serial CLI and measurement interface**: the default UART is `115200 8N1`, and DIO1 can output TX/RX timing pulses for latency measurement.
 
-当前射频配置为 **433.000 MHz、50 kBaud、2-GFSK、-10 dBm**。配置位于 `firmware/smartrf_settings/`。
+The current RF configuration is **433.000 MHz, 50 kBaud, 2-GFSK, -10 dBm**. It lives in `firmware/smartrf_settings/`.
 
-## 目录
+## Layout
 
-| 路径 | 说明 |
+| Path | Description |
 | --- | --- |
-| `firmware/` | 统一 RX/TX 应用、UART CLI、无线逻辑、链接脚本和构建/烧录脚本。 |
-| `bootloader/` | NoRTOS bootloader、CCFG、metadata journal、镜像校验与 UART 更新协议。 |
-| `tools/` | OTA package、UART 更新、J-Link metadata 与测试工具。 |
-| `analysis/` | 无线延迟采集数据及分析脚本。 |
-| `tirtos_builds_CC1310_LAUNCHXL_release_ccs/` | firmware 构建使用的 CCS/TI-RTOS 生成配置。 |
-| `toolchains/` | 项目内 TI ARM 编译工具链；默认使用 `ti-cgt-arm_18.12.5.LTS`。 |
+| `firmware/` | Unified RX/TX application, UART CLI, radio logic, linker script and build/flash scripts. |
+| `bootloader/` | NoRTOS bootloader, CCFG, metadata journal, image validation and UART update protocol. |
+| `tools/` | OTA package, UART update, J-Link metadata and test tools. |
+| `analysis/` | Radio latency capture data and analysis scripts. |
+| `tirtos_builds_CC1310_LAUNCHXL_release_ccs/` | CCS/TI-RTOS generated configuration used by the firmware build. |
+| `toolchains/` | In-repo TI ARM compiler toolchain; `ti-cgt-arm_18.12.5.LTS` is used by default. |
 
-## 构建依赖
+## Build dependencies
 
-需要：
+Required:
 
-- TI ARM CGT `18.12.5.LTS`，默认位置为 `toolchains/ti-cgt-arm_18.12.5.LTS`。
-- SimpleLink CC13x0 SDK `4.20.02.07`，默认位置为 `/Applications/ti/simplelink_cc13x0_sdk_4_20_02_07`。
-- Python 3（用于 package 生成、校验与 OTA 工具）。
-- SEGGER J-Link Software（仅 J-Link 烧录需要；`JLinkExe` 应在 `PATH` 中）。
+- TI ARM CGT `18.12.5.LTS`, by default at `toolchains/ti-cgt-arm_18.12.5.LTS`.
+- SimpleLink CC13x0 SDK `4.20.02.07`, by default at `/Applications/ti/simplelink_cc13x0_sdk_4_20_02_07`.
+- Python 3 (for package generation, verification and the OTA tools).
+- SEGGER J-Link Software (only needed for J-Link flashing; `JLinkExe` should be on `PATH`).
 
-`SIMPLELINK_SDK` 和 `TI_ARM_CGT` 可覆盖默认路径：
+`SIMPLELINK_SDK` and `TI_ARM_CGT` override the default paths:
 
 ```sh
 TI_ARM_CGT="$PWD/toolchains/ti-cgt-arm_18.12.5.LTS" \
@@ -44,11 +44,11 @@ SIMPLELINK_SDK=/path/to/simplelink_cc13x0_sdk_4_20_02_07 \
 ./firmware/build.sh
 ```
 
-`firmware/firmware_build.h` 中的 `FIRMWARE_VERSION` 是唯一发布版本源，必须在每次发布时递增。构建脚本将 `major.minor.patch` 编码为 32-bit 的 `0x00MMmmpp`：最高字节保留为 0，`major`、`minor`、`patch` 各占一个字节（范围均为 0–255），例如 `0.2.0` 编码为 `0x00000200`。OTA header 以该 4-byte 值存储，主机工具与设备 `info` 均显示为 `major.minor.patch`。构建脚本会拒绝缺少编译器、HEX 工具或 SDK 的环境。
+`FIRMWARE_VERSION` in `firmware/firmware_build.h` is the single source of the release version and must be incremented for every release. The build script encodes `major.minor.patch` as the 32-bit value `0x00MMmmpp`: the top byte is reserved as 0, and `major`, `minor` and `patch` each take one byte (each in the range 0–255), so `0.2.0` encodes as `0x00000200`. The OTA header stores this 4-byte value, and both the host tools and the device `info` display it as `major.minor.patch`. The build script refuses to run in an environment that lacks the compiler, HEX tool or SDK.
 
-## 编译
+## Building
 
-在工作区根目录执行：
+Run from the workspace root:
 
 ```sh
 ./bootloader/build.sh
@@ -56,87 +56,87 @@ SIMPLELINK_SDK=/path/to/simplelink_cc13x0_sdk_4_20_02_07 \
 python3 -m unittest discover -s tools/tests -v
 ```
 
-构建结果：
+Build outputs:
 
-| 文件 | 用途 |
+| File | Purpose |
 | --- | --- |
-| `bootloader/build/bootloader.out` | bootloader 镜像。 |
-| `firmware/boot_build/nonrom_test/firmware.out` | 链接到 `0x00008000` 的应用镜像。 |
-| `firmware/boot_build/nonrom_test/firmware.hex` | 地址保持的 Intel HEX，供 J-Link 烧录应用。 |
-| `firmware/boot_build/nonrom_test/firmware.pkg` | CRC32 保护的 UART OTA 包，目标 ID 为 `CC1M`。 |
+| `bootloader/build/bootloader.out` | Bootloader image. |
+| `firmware/boot_build/nonrom_test/firmware.out` | Application image linked at `0x00008000`. |
+| `firmware/boot_build/nonrom_test/firmware.hex` | Address-preserving Intel HEX for flashing the application with J-Link. |
+| `firmware/boot_build/nonrom_test/firmware.pkg` | CRC32-protected UART OTA package with target ID `CC1M`. |
 
-验证 OTA 包：
+Verify the OTA package:
 
 ```sh
 python3 tools/fw_package.py --verify firmware/boot_build/nonrom_test/firmware.pkg
 ```
 
-清理可再生产物：
+Clean regenerable artifacts:
 
 ```sh
 ./bootloader/build.sh clean
 ./firmware/build.sh clean
 ```
 
-## J-Link 工厂烧录或恢复
+## J-Link factory flashing or recovery
 
-> **警告：此操作会全片擦除。** 它会清除已有应用、metadata 和其他 Flash 数据。
+> **Warning: this performs a full chip erase.** It wipes the existing application, metadata and any other Flash data.
 
-完成上述构建后，明确选择启动角色：
+After the builds above, choose the boot role explicitly:
 
 ```sh
 ./firmware/flash_all_jlink.sh -r rx
-# 或
+# or
 ./firmware/flash_all_jlink.sh -r tx
 ```
 
-多探针环境指定序列号：
+Specify a serial number in multi-probe setups:
 
 ```sh
 ./firmware/flash_all_jlink.sh -s 123456789 -r rx
 ```
 
-该脚本依次擦除芯片、烧录 bootloader、从 `0x00008000` 烧录应用 HEX，并写入已验证 package 对应的 metadata。不要单独烧录 `firmware.hex` 或将 `firmware.out` 当作零地址镜像烧录：应用没有 CCFG，且需要有效 metadata 才能启动。
+The script erases the chip, flashes the bootloader, flashes the application HEX from `0x00008000`, and writes metadata matching the verified package. Do not flash `firmware.hex` on its own or flash `firmware.out` as a zero-address image: the application carries no CCFG and needs valid metadata to boot.
 
-接线与故障排查见 [firmware/build_flash.md](firmware/build_flash.md)。
+Wiring and troubleshooting are covered in [firmware/build_flash.md](firmware/build_flash.md).
 
-## UART OTA 更新
+## UART OTA update
 
-设备进入 bootloader 更新模式后，使用主机工具刷写 package，并选择角色：
+Once the device is in bootloader update mode, flash the package with the host tool and choose a role:
 
 ```sh
 python3 tools/fw_update.py --port /dev/cu.usbserial-XXXX flash \
   --package firmware/boot_build/nonrom_test/firmware.pkg --role rx
 ```
 
-切换已安装有效镜像的角色无需重新传输应用：
+Switch the role of an installed, valid image without re-sending the application:
 
 ```sh
 python3 tools/fw_update.py --port /dev/cu.usbserial-XXXX set-role --role tx
 ```
 
-查询设备状态：
+Query the device status:
 
 ```sh
 python3 tools/fw_update.py --port /dev/cu.usbserial-XXXX info
 ```
 
-例如，`info` 会显示 `target=CC1M(0x4343314D)`、
-`version=0.2.0(0x00000200)`、`role=rx(1)`；状态也会以
-`state=update_requested(2)` 的形式同时给出名称和原始数值。
+For example, `info` prints `target=CC1M(0x4343314D)`,
+`version=0.2.0(0x00000200)` and `role=rx(1)`; the state is likewise given
+with both its name and raw value, as in `state=update_requested(2)`.
 
-bootloader 会校验 package header、目标 ID、应用地址和 CRC32。它使用单 App slot，不支持断点续传或 A/B 回滚；更新中断、镜像异常或连续三次未确认启动都会使设备进入 UART 更新模式。
+The bootloader verifies the package header, target ID, application address and CRC32. It uses a single App slot and supports neither resumable transfers nor A/B rollback; an interrupted update, an invalid image, or three consecutive unconfirmed boots put the device into UART update mode.
 
-## 安全与硬件边界
+## Security and hardware boundaries
 
-- OTA 的 CRC32 只保证完整性，**不提供来源认证或加密**。可物理访问升级 UART 的人员可以刷写自行构造但 CRC 正确的镜像；部署时必须控制该接口的物理访问。
-- bootloader 独占 `0x00000000–0x00007FFF`、metadata 页 `0x6000/0x7000` 和 CCFG。应用仅可使用 `0x00008000–0x0001EFFF`。
-- 修改 Flash 布局、CCFG、RF 频率/功率、调制方式或引脚分配时，必须同步审查 bootloader、firmware、主机工具和硬件验证流程。
+- The OTA CRC32 only guarantees integrity; it **provides no origin authentication or encryption**. Anyone with physical access to the update UART can flash a self-built image with a correct CRC, so physical access to that interface must be controlled in deployment.
+- The bootloader exclusively owns `0x00000000–0x00007FFF`, the metadata pages at `0x6000/0x7000` and the CCFG. The application may only use `0x00008000–0x0001EFFF`.
+- Any change to the Flash layout, CCFG, RF frequency/power, modulation or pin assignment must be reviewed together across the bootloader, firmware, host tools and hardware validation flow.
 
-## 更多文档
+## Further documentation
 
-- [Firmware 设计](firmware/design.md)
-- [RX 数据流](firmware/RF_PACKET_DATA_FLOW.md)
+- [Firmware design](firmware/design.md)
+- [RX data flow](firmware/RF_PACKET_DATA_FLOW.md)
 - [Firmware CLI](firmware/cli.md)
-- [Bootloader 设计与 OTA 协议](bootloader/BOOTLOADER_DESIGN.md)
-- [J-Link 构建与烧录说明](firmware/build_flash.md)
+- [Bootloader design and OTA protocol](bootloader/BOOTLOADER_DESIGN.md)
+- [J-Link build and flashing guide](firmware/build_flash.md)
