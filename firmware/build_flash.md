@@ -85,6 +85,66 @@ SIMPLELINK_SDK=/opt/ti/simplelink_cc13x0_sdk_4_20_02_07 \
 
 全片擦除会清除已有应用、metadata 和其他 Flash 数据。不要单独烧录 `firmware.hex`：没有有效 metadata 时 bootloader 不会启动该应用。也不要将 `firmware.out` 当作零地址 standalone 镜像烧录；该应用不含 CCFG，向量表位于 `0x00008000`。
 
+## 通过 bootloader UART 更新 firmware.pkg
+
+现场升级使用构建生成的 `firmware.pkg`，不需要 J-Link，也不会全片擦除或重写
+bootloader。升级会替换 App slot（`0x00008000–0x0001EFFF`）；传输中断、包校验失败或
+镜像 CRC 不匹配时，bootloader 不会启动不完整应用，而是保持在 UART 更新模式。
+
+先构建应用，并可选地在主机上校验 package：
+
+```sh
+./firmware/build.sh
+python3 tools/fw_package.py --verify firmware/boot_build/nonrom_test/firmware.pkg
+```
+
+运行中的应用需要先通过其 UART CLI 请求进入 bootloader：
+
+```text
+bootloader
+OK rebooting_to_bootloader
+```
+
+应用会在 metadata 写入成功后复位。若目标没有有效应用或上次更新未完成，bootloader 会在
+复位后直接进入更新模式，无需发送该 CLI 命令。
+
+确认串口设备名后，使用 `fw_update.py info` 验证当前确实由 bootloader 响应。默认波特率是
+115200；macOS 上的串口名通常为 `/dev/cu.usbserial-XXXX`：
+
+```sh
+python3 tools/fw_update.py --port /dev/cu.usbserial-XXXX info
+```
+
+典型输出如下，其中 `target=CC1M(0x4343314D)`、`state=update_requested(2)` 表示目标正确并
+已由应用请求更新：
+
+```text
+INFO target=CC1M(0x4343314D) state=update_requested(2) max_size=94208 image_size=... version=... role=rx(1)
+```
+
+传入 package 时必须明确选择更新后启动角色。以下命令更新并以 RX 角色启动：
+
+```sh
+python3 tools/fw_update.py --port /dev/cu.usbserial-XXXX flash \
+    --package firmware/boot_build/nonrom_test/firmware.pkg --role rx
+```
+
+将 `--role rx` 改为 `--role tx` 可选择 TX。工具先校验 package header、target ID 和 image
+size，再以 128-byte stop-and-wait 分块传输；目标校验写入后的 App CRC32 后才返回
+`COMPLETE` 并自动复位。看到 `COMPLETE` 后等待应用重新启动，再用应用 CLI 的 `version`、
+`help` 及相应 RX/TX 功能确认更新与角色。
+
+如只需切换已经安装且有效的镜像角色，不要重新传输 package。先从应用 CLI 输入
+`bootloader`，待其复位进入更新器后执行：
+
+```sh
+python3 tools/fw_update.py --port /dev/cu.usbserial-XXXX set-role --role tx
+```
+
+`set-role` 只更新 metadata，返回 `COMPLETE` 后自动复位；它要求目标已有 CRC 和向量表均有效
+的应用镜像。升级失败或串口无法收到 `INFO` 时，不要改用单独烧录 `firmware.hex`；应检查 UART
+接线/端口/波特率，必要时使用前述 J-Link 全量恢复流程。
+
 ## 故障排查
 
 1. 安装 SEGGER J-Link Software Pack，确保 `JLinkExe` 在 `PATH` 中；否则设置 `JLINK_BIN=/path/to/JLinkExe`。
@@ -92,4 +152,4 @@ SIMPLELINK_SDK=/opt/ti/simplelink_cc13x0_sdk_4_20_02_07 \
 3. 无法连接时用 `JLINK_SPEED=100 ./firmware/flash_all_jlink.sh -r rx`，并在按住 `RESET_N` 时启动脚本后释放。
 4. 仅当脚本返回 0 时才判定烧录成功；它会先验证应用与 OTA package 的对应关系。
 
-现场更新请使用 UART OTA 客户端及 `firmware.pkg`，而非 J-Link 全擦除流程。
+现场更新请使用上文 UART OTA 客户端及 `firmware.pkg`，而非 J-Link 全擦除流程。
