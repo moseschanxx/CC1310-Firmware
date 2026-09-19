@@ -25,6 +25,8 @@
 #define I2C_DUMP_MAX            I2C_WRITE_MAX
 #define I2C_COMMAND_REGISTER    0x40U
 #define I2C_COMMAND_CLEAR_STATS 0x01U
+#define I2C_LOOPBACK_REGISTER   0x80U
+#define I2C_LOOPBACK_SIZE       64U
 #define I2C_WORKER_STACK        1024U
 
 #define I2C_DUMP_WRITE          1U
@@ -47,14 +49,23 @@ static volatile uint8_t transmitRegisters;
 static volatile uint8_t transmitStartRegister;
 static volatile uint8_t transmitRegisterSnapshot;
 static volatile uint8_t transmitPointerValid;
+static volatile uint8_t transmitLoopback;
 static volatile uint8_t transmitLength;
 static volatile uint8_t transmitBuffer[I2C_DUMP_MAX];
+static volatile uint8_t loopbackBuffer[I2C_LOOPBACK_SIZE];
 static volatile uint32_t transactionCount;
 static volatile uint32_t errorCount;
 static volatile uint8_t dumpEnabled;
 static FirmwareRole currentRole;
 
 static int i2cInitializeHardware(void);
+
+static uint8_t isLoopbackWrite(uint8_t startRegister, uint8_t length)
+{
+    return startRegister >= I2C_LOOPBACK_REGISTER &&
+           startRegister < I2C_LOOPBACK_REGISTER + I2C_LOOPBACK_SIZE &&
+           length <= I2C_LOOPBACK_SIZE - (startRegister - I2C_LOOPBACK_REGISTER);
+}
 
 static char hexDigit(uint8_t value)
 {
@@ -105,13 +116,23 @@ static void i2cInterruptHandler(UArg arg)
         status = I2CSlaveStatus(I2C0_BASE);
         if (status == I2C_SLAVE_ACT_TREQ) {
             if (transmitPointerValid != 0U) {
-                if (transmitRegisters > 1U) {
-                    transmitRegisters = transmitRegisterSnapshot;
-                }
                 transmitOffset = (registerPointer - transmitStartRegister) &
                                  (I2C_REGISTER_COUNT - 1U);
-                value = registers[transmitRegisters][registerPointer++ &
-                                                     (I2C_REGISTER_COUNT - 1U)];
+                if (transmitLoopback != 0U) {
+                    if (registerPointer >= I2C_LOOPBACK_REGISTER &&
+                        registerPointer < I2C_LOOPBACK_REGISTER + I2C_LOOPBACK_SIZE) {
+                        value = loopbackBuffer[registerPointer - I2C_LOOPBACK_REGISTER];
+                    } else {
+                        value = 0U;
+                    }
+                    ++registerPointer;
+                } else {
+                    if (transmitRegisters > 1U) {
+                        transmitRegisters = transmitRegisterSnapshot;
+                    }
+                    value = registers[transmitRegisters][registerPointer++ &
+                                                         (I2C_REGISTER_COUNT - 1U)];
+                }
                 transmitBuffer[transmitOffset] = value;
                 if (transmitLength <= transmitOffset) {
                     transmitLength = transmitOffset + 1U;
@@ -134,6 +155,8 @@ static void i2cInterruptHandler(UArg arg)
             transmitStartRegister = registerPointer;
             transmitRegisterSnapshot = activeRegisters;
             transmitPointerValid = 1U;
+            transmitLoopback = registerPointer >= I2C_LOOPBACK_REGISTER &&
+                               registerPointer < I2C_LOOPBACK_REGISTER + I2C_LOOPBACK_SIZE;
             transmitLength = 0U;
         } else if (status == I2C_SLAVE_ACT_RREQ) {
             value = (uint8_t)I2CSlaveDataGet(I2C0_BASE);
@@ -152,8 +175,15 @@ static void i2cInterruptHandler(UArg arg)
             receiveCount = 0U;
             transmitRegisters = 0xFFU;
             transmitPointerValid = 0U;
+            transmitLoopback = 0U;
             transmitLength = 0U;
             return;
+        }
+        if (isLoopbackWrite(registerPointer, receiveCount) != 0U) {
+            for (index = 0U; index < receiveCount; ++index) {
+                loopbackBuffer[registerPointer - I2C_LOOPBACK_REGISTER + index] =
+                    receiveBuffer[index];
+            }
         }
         pendingRegister = registerPointer;
         pendingCount = receiveCount;
@@ -171,6 +201,9 @@ static void i2cInterruptHandler(UArg arg)
 
         if (pendingCount != 0U) {
             ++errorCount;
+            transmitRegisters = 0xFFU;
+            transmitPointerValid = 0U;
+            transmitLoopback = 0U;
             transmitLength = 0U;
             return;
         }
@@ -186,6 +219,7 @@ static void i2cInterruptHandler(UArg arg)
     if ((flags & I2C_SLAVE_INT_STOP) != 0U) {
         transmitRegisters = 0xFFU;
         transmitPointerValid = 0U;
+        transmitLoopback = 0U;
         transmitLength = 0U;
     }
 }
@@ -231,7 +265,8 @@ void *i2c_slave_thread(void *arg0)
             pendingBuffer[0] == I2C_COMMAND_CLEAR_STATS) {
             transactionCount = 0U;
             errorCount = 0U;
-        } else if (dumpDirection == I2C_DUMP_WRITE && pendingCount != 0U) {
+        } else if (dumpDirection == I2C_DUMP_WRITE && pendingCount != 0U &&
+                   isLoopbackWrite(dumpRegister, dumpCount) == 0U) {
             ++errorCount;
         }
         pendingCount = 0U;
@@ -304,6 +339,7 @@ int i2c_slave_start(FirmwareRole role)
     currentRole = role;
     transmitRegisters = 0xFFU;
     transmitPointerValid = 0U;
+    transmitLoopback = 0U;
     Semaphore_construct(&workSemaphoreStruct, 0, NULL);
     /* SYS/BIOS owns the application's vector table.  Do not use driverlib
      * I2CIntRegister(), which creates a second table and changes VTOR. */

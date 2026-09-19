@@ -79,9 +79,29 @@ new bank concurrently.
 
 A write payload is buffered up to 64 bytes. Bytes after the first 64 are
 discarded and each discarded byte increments `errorCount`. Apart from the
-command below, a non-empty write is protocol-invalid: it is accepted on the
-bus, then the worker increments `errorCount`; it never modifies the status
-bank.
+loopback window and command below, a non-empty write is protocol-invalid: it
+is accepted on the bus, then the worker increments `errorCount`; it never
+modifies the status bank.
+
+## Loopback window
+
+The full pointer range `0x80` through `0xBF` is a 64-byte volatile loopback
+window for bus verification. It is independent of the status page and is
+cleared by reset. A write beginning in this range is valid only when its entire
+payload remains in the range; it is committed in the I2C ISR when STOP is
+received. A following read therefore returns the same bytes immediately and
+does not wait for the worker task.
+
+For a 1–50 byte random-data test, use a fixed start pointer of `0x80`:
+
+```text
+write: START + 0x2A(W) + 0x80 + N random bytes + STOP
+read:  START + 0x2A(W) + 0x80 + REPEATED START + 0x2A(R) + N bytes + STOP
+```
+
+`N` may be 1 through 50 (and up to 64 at pointer `0x80`). A request that
+crosses `0xBF` is not a valid loopback write and increments `errorCount`; do
+not use cross-boundary reads for loopback verification.
 
 ## Status map
 
@@ -96,6 +116,7 @@ All multi-byte fields are little-endian. Bytes not listed below read as zero.
 | `0x0A` | 4 | `transactionCount`: completed writes with at least one payload byte that were queued to the worker |
 | `0x0E` | 4 | `errorCount` |
 | `0x12` | 4 | `Clock_getTicks()` value at the last status-bank publication |
+| `0x80`–`0xBF` | 64 | Volatile read/write loopback window |
 
 The command mailbox is selected by the full pointer value `0x40`, even though
 normal reads wrap at 64 bytes:
